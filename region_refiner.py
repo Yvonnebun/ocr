@@ -27,6 +27,7 @@ import utils
 
 # PaddleOCR import (3.x uses centralized logger)
 from paddleocr import PaddleOCR  # type: ignore
+from run_logger import get_run_logger
 
 
 _ocr: Optional[PaddleOCR] = None
@@ -227,6 +228,12 @@ def refine_region(page_img: Image.Image, candidate_bbox: List[float]) -> Dict[st
             "rec": bool(getattr(config, "OCR_CALL_REC", True)),
         }
         call_kwargs = _filter_kwargs(ocr.ocr, call_kwargs)
+
+        # codex update: track PaddleOCR calls for region refinement
+        run_logger = get_run_logger()
+        if run_logger:
+            run_logger.increment("paddle_calls")
+            run_logger.log_event("paddle_call", {"source": "region_refiner"})
 
         ocr_raw = ocr.ocr(region_bgr, **call_kwargs)  # type: ignore
 

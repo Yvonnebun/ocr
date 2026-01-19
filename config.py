@@ -68,3 +68,24 @@ OCR_AUTO_INVERT = True
 OCR_INVERT_WHITE_RATIO_THRESHOLD = 0.5
 
 MIN_REGION_SIDE_PX = 0
+
+# codex update: page keyword gate config (floorplan detector)
+PAGE_KEYWORDS = ["floor plan", "floorplan"]
+PAGE_KEYWORD_LANG = "en"
+GATE_USE_OCR = True
+GATE_MAX_SIDE = 3840
+GATE_OCR_PARAMS = dict(
+    lang=PAGE_KEYWORD_LANG,
+    use_textline_orientation=True,
+    text_det_limit_type="max",
+    text_det_limit_side_len=GATE_MAX_SIDE,
+    text_det_thresh=0.2,
+    text_det_box_thresh=0.3,
+    text_det_unclip_ratio=1.8,
+)
+
+# codex update: blueprint visual prefilter
+BLUEPRINT_FILTER_ENABLED = True
+BLUEPRINT_MIN_AREA_RATIO = 0.35
+BLUEPRINT_EDGE_DENSITY_MIN = 0.010
+BLUEPRINT_COLOR_MAX = 0.30
