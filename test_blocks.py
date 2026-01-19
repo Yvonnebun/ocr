@@ -16,11 +16,11 @@ from PIL import Image, ImageDraw
 import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
-from region_refiner import refine_all_candidates
 from image_extraction import extract_image_assets
 from native_text import extract_native_text
 from page_gate import page_has_floorplan_keyword
 from run_logger import init_run_logger, get_run_logger
+import utils
 
 
 def _save_overlay(image_path: str, bboxes: List[List[float]], out_path: str, color: str) -> None:
@@ -78,13 +78,31 @@ def main() -> int:
     layout_bbox = [b["bbox_px"] for b in layout_blocks]
     _save_overlay(image_path, layout_bbox, str(out_root / "layout_overlay.png"), "red")
 
-    # Block 4: Region refinement
-    print("\n[Block 4] Region refinement")
-    refine_result = refine_all_candidates(image_path, figure_blocks)
-    image_regions = refine_result["image_regions_final"]
+    # Block 4: Region refinement (bypassed)
+    # codex update: skip region_refiner and use candidate preprocessing directly
+    print("\n[Block 4] Region refinement (bypassed)")
+    candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
+    candidate_bboxes = utils.preprocess_candidates(
+        candidate_bboxes,
+        width_px,
+        height_px,
+        min_w=config.CANDIDATE_MIN_W,
+        min_h=config.CANDIDATE_MIN_H,
+        overlap_th=config.CANDIDATE_OVERLAP_TH,
+        min_area_ratio=config.CANDIDATE_MIN_AREA_RATIO,
+        sidebar_params=config.SIDEBAR_PARAMS,
+    )
+    image_regions = [{"bbox_px": bbox, "source": "preprocess"} for bbox in candidate_bboxes]
     image_bbox = [r["bbox_px"] for r in image_regions]
     _save_overlay(image_path, image_bbox, str(out_root / "refined_overlay.png"), "green")
-    print(f"Refined image regions: {len(image_regions)}")
+    print(f"Kept image regions: {len(image_regions)}")
+    # codex update: original refiner block (commented out for later gate work)
+    # print("\n[Block 4] Region refinement")
+    # refine_result = refine_all_candidates(image_path, figure_blocks)
+    # image_regions = refine_result["image_regions_final"]
+    # image_bbox = [r["bbox_px"] for r in image_regions]
+    # _save_overlay(image_path, image_bbox, str(out_root / "refined_overlay.png"), "green")
+    # print(f"Refined image regions: {len(image_regions)}")
 
     # Block 5: Image extraction with blueprint filter
     print("\n[Block 5] Image extraction")
