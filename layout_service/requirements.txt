@@ -1,0 +1,23 @@
+# ---- Web ----
+Flask==2.2.5
+Werkzeug<2.3
+Jinja2<3.1
+itsdangerous<2.2
+click<8.1
+
+# ---- API / utils ----
+requests
+numpy
+Pillow
+opencv-python-headless
+uvicorn
+fastapi
+flask_cors
+gunicorn
+
+
+
+# ---- Layout ----
+layoutparser
+
+
