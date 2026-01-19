@@ -9,11 +9,13 @@ from typing import Dict, List
 import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
-from region_refiner import refine_all_candidates
 from image_extraction import extract_image_assets
 from image_ocr import ocr_all_images
 from native_text import extract_native_text, filter_text_excluding_images
 from scanned_page import ocr_non_image_regions
+from page_gate import page_has_floorplan_keyword
+from run_logger import init_run_logger, get_run_logger
+import utils
 from caption_extract import (
     extract_captions_from_native,
     extract_captions_from_ocr,
@@ -35,6 +37,10 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
     try:
         if output_dir is None:
             output_dir = config.OUTPUT_DIR
+
+        # codex update: initialize run logger for diagnostics
+        run_logger = init_run_logger(output_dir)
+        run_logger.log_event("run_start", {"pdf_path": pdf_path, "output_dir": output_dir})
         
         print(f"Output directory: {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
@@ -66,16 +72,60 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
         for page_idx, (image_path, width_px, height_px) in enumerate(page_info):
             try:
                 print(f"Processing page {page_idx + 1}/{page_count}...")
+                run_logger = get_run_logger()
+                if run_logger:
+                    run_logger.increment("pages_processed")
+                    run_logger.log_event("page_start", {"page_idx": page_idx, "image_path": image_path})
                 
                 page_result = {
                     "page_idx": page_idx,
                     "flags": {
-                        "is_scanned": False
+                        "is_scanned": False,
+                        "page_keyword_gate": True
                     },
                     "images": [],
                     "captions": []
                 }
-                
+
+                # Step 1.5: Page keyword gate (native text + OCR)
+                # codex update: gate pages before layout detection
+                print(f"  Step 1.5: Page keyword gate...")
+                try:
+                    native_text_blocks, has_native_text = extract_native_text(
+                        pdf_path, page_idx, width_px, height_px
+                    )
+                    page_has_kw, force_keep, gate_source = page_has_floorplan_keyword(
+                        image_path, native_text_blocks
+                    )
+                    page_result["flags"]["page_keyword_gate"] = page_has_kw
+                    page_result["flags"]["page_keyword_gate_source"] = gate_source
+                    page_result["flags"]["page_keyword_force_keep"] = force_keep
+                    if run_logger:
+                        run_logger.log_event(
+                            "page_gate",
+                            {
+                                "page_idx": page_idx,
+                                "passed": page_has_kw,
+                                "force_keep": force_keep,
+                                "source": gate_source,
+                            }
+                        )
+                except Exception as e:
+                    print(f"    WARNING in Step 1.5 (Page Gate): {e}")
+                    traceback.print_exc()
+                    native_text_blocks = []
+                    has_native_text = False
+                    page_result["flags"]["page_keyword_gate"] = True
+                    page_result["flags"]["page_keyword_force_keep"] = False
+                    page_result["flags"]["page_keyword_gate_source"] = "gate_error"
+
+                if not page_result["flags"]["page_keyword_gate"]:
+                    print(f"  Page {page_idx + 1} skipped by keyword gate")
+                    if run_logger:
+                        run_logger.log_event("page_skipped", {"page_idx": page_idx, "reason": "keyword_gate"})
+                    result["pages"].append(page_result)
+                    continue
+
                 # Step 2: Layout Detect
                 print(f"  Step 2: Detecting layout...")
                 try:
@@ -90,24 +140,26 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 print(f"  Step 3: Filtering image candidates...")
                 figure_blocks = filter_figure_blocks(layout_blocks)
                 print(f"    Found {len(figure_blocks)} figure candidates")
-                
-                # Step 4: Region Refiner
-                print(f"  Step 4: Refining regions...")
+
+                # Step 4: Region Refiner (removed)
+                # codex update: skip region_refiner entirely; use preprocessed candidates directly
                 if figure_blocks:
                     try:
-                        refine_result = refine_all_candidates(image_path, figure_blocks)
-                        image_regions_final = refine_result['image_regions_final']
-                        text_regions_override = refine_result['text_regions_override']
-                        uncertain_regions = refine_result['uncertain']
-                        
-                        print(f"    Refined to {len(image_regions_final)} image regions")
-                        print(f"    {len(text_regions_override)} regions overridden as text")
-                        print(f"    {len(uncertain_regions)} uncertain regions (not used in MVP)")
-                        
-                        # MVP: uncertain regions are ignored (not output, not used)
-                        # They don't go into image_regions_final or text_regions_override
+                        candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
+                        candidate_bboxes = utils.preprocess_candidates(
+                            candidate_bboxes,
+                            width_px,
+                            height_px,
+                            min_w=config.CANDIDATE_MIN_W,
+                            min_h=config.CANDIDATE_MIN_H,
+                            overlap_th=config.CANDIDATE_OVERLAP_TH,
+                            min_area_ratio=config.CANDIDATE_MIN_AREA_RATIO,
+                            sidebar_params=config.SIDEBAR_PARAMS,
+                        )
+                        image_regions_final = [{"bbox_px": bbox, "source": "preprocess"} for bbox in candidate_bboxes]
+                        text_regions_override = []
                     except Exception as e:
-                        print(f"    WARNING in Step 4 (Region Refiner): {e}")
+                        print(f"    WARNING in Step 4 (Preprocess Candidates): {e}")
                         traceback.print_exc()
                         image_regions_final = []
                         text_regions_override = []
@@ -120,9 +172,15 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 image_bboxes = [region['bbox_px'] for region in image_regions_final]
                 try:
                     extracted_images = extract_image_assets(
-                        image_path, image_regions_final, config.IMAGE_DIR, page_idx
+                        image_path,
+                        image_regions_final,
+                        config.IMAGE_DIR,
+                        page_idx,
+                        force_keep=page_result["flags"].get("page_keyword_force_keep", False),
                     )
                     print(f"    Extracted {len(extracted_images)} images")
+                    if run_logger:
+                        run_logger.record_images(extracted_images)
                 except Exception as e:
                     print(f"    WARNING in Step 5 (Image Extraction): {e}")
                     traceback.print_exc()
@@ -140,17 +198,9 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     page_result["images"] = extracted_images
                 
                 # Step 7: Native Text Extraction
-                print(f"  Step 7: Extracting native text...")
-                try:
-                    native_text_blocks, has_native_text = extract_native_text(
-                        pdf_path, page_idx, width_px, height_px
-                    )
-                    print(f"    Extracted {len(native_text_blocks)} native text blocks, has_native={has_native_text}")
-                except Exception as e:
-                    print(f"    WARNING in Step 7 (Native Text): {e}")
-                    traceback.print_exc()
-                    native_text_blocks = []
-                    has_native_text = False
+                # codex update: reuse native text from gate step
+                print(f"  Step 7: Using native text from gate step...")
+                print(f"    Extracted {len(native_text_blocks)} native text blocks, has_native={has_native_text}")
                 
                 # Step 8: Text Excluding Image Regions
                 print(f"  Step 8: Filtering text excluding image regions...")
@@ -215,6 +265,8 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 
                 result["pages"].append(page_result)
                 print(f"  Page {page_idx + 1} completed")
+                if run_logger:
+                    run_logger.log_event("page_complete", {"page_idx": page_idx})
                 
             except Exception as e:
                 print(f"ERROR processing page {page_idx + 1}: {e}")
@@ -230,6 +282,12 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
     
         # Combine all text content
         result["text_content"] = " ".join(all_text_content)
+
+        # codex update: finalize run logger
+        run_logger = get_run_logger()
+        if run_logger:
+            run_logger.log_event("run_complete", {"pages": page_count})
+            run_logger.finalize()
         
         return result
         
@@ -273,4 +331,3 @@ if __name__ == "__main__":
         print(f"\nFATAL ERROR: {e}")
         traceback.print_exc()
         sys.exit(1)
-

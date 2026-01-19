@@ -16,20 +16,15 @@ from __future__ import annotations
 
 import os
 import re
-import inspect
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import numpy as np
 from PIL import Image
+import uuid
 
 import config
 import utils
-
-# PaddleOCR import (3.x uses centralized logger)
-from paddleocr import PaddleOCR  # type: ignore
-
-
-_ocr: Optional[PaddleOCR] = None
+from ocr_service import paddle_ocr
+from run_logger import get_run_logger
 
 
 # -----------------------------
@@ -67,113 +62,18 @@ def _save_crop(page_img: Image.Image, bbox_xyxy: List[int], out_path: str) -> No
         pass
 
 
-def _filter_kwargs(callable_obj, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    """Keep only kwargs supported by callable_obj signature."""
-    try:
-        sig = inspect.signature(callable_obj)
-        supported = set(sig.parameters.keys())
-        return {k: v for k, v in kwargs.items() if k in supported}
-    except Exception:
-        # If signature introspection fails, return as-is (best effort).
-        return kwargs
-
-
-def _configure_paddleocr_logging() -> None:
-    """
-    PaddleOCR 3.x uses paddleocr.logger (Python logging). show_log is removed in 3.x.
-    We set level to ERROR to reduce spam if logger exists.
-    """
-    try:
-        from paddleocr import logger  # type: ignore
-        import logging
-
-        logger.setLevel(logging.ERROR)
-        logger.propagate = False
-    except Exception:
-        pass
-
-
-# -----------------------------
-# OCR initialization
-# -----------------------------
-def get_ocr() -> PaddleOCR:
-    global _ocr
-    if _ocr is None:
-        _configure_paddleocr_logging()
-
-        init_kwargs = {
-            "lang": getattr(config, "OCR_LANG", "en"),
-            "use_angle_cls": getattr(config, "OCR_USE_ANGLE_CLS", True),
-            # NOTE: do NOT pass show_log (removed in PaddleOCR 3.x)
-        }
-        init_kwargs = _filter_kwargs(PaddleOCR.__init__, init_kwargs)
-
-        _ocr = PaddleOCR(**init_kwargs)  # type: ignore
-    return _ocr
+# codex update: paddle-service handles OCR; no local PaddleOCR initialization
 
 
 # -----------------------------
 # Preprocess
 # -----------------------------
-def preprocess_for_ocr(region_pil: Image.Image) -> np.ndarray:
+def preprocess_for_ocr(region_pil: Image.Image) -> Image.Image:
     """
-    Returns BGR uint8 image for PaddleOCR.
-    Includes safety resize to avoid huge inputs.
+    Returns a PIL image for paddle-service OCR.
     """
-    import cv2
-
-    rgb = np.array(region_pil.convert("RGB"))
-    h, w = rgb.shape[:2]
-
-    # Safety resize for preprocessing (separate from region guard)
-    max_pre_side = getattr(config, "OCR_PREPROC_MAX_SIDE", 2000)
-    if max_pre_side and max(h, w) > max_pre_side:
-        scale = max(h, w) / float(max_pre_side)
-        new_w = max(1, int(w / scale))
-        new_h = max(1, int(h / scale))
-        rgb = cv2.resize(rgb, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-
-    # CLAHE
-    if getattr(config, "OCR_USE_CLAHE", True):
-        clahe = cv2.createCLAHE(
-            clipLimit=getattr(config, "OCR_CLAHE_CLIP", 2.0),
-            tileGridSize=getattr(config, "OCR_CLAHE_GRID", (8, 8)),
-        )
-        gray = clahe.apply(gray)
-
-    # Adaptive threshold
-    if getattr(config, "OCR_USE_ADAPTIVE_THRESHOLD", True):
-        block_size = int(getattr(config, "OCR_ADAPTIVE_BLOCK_SIZE", 31))
-        if block_size < 3:
-            block_size = 3
-        if block_size % 2 == 0:
-            block_size += 1
-        C = int(getattr(config, "OCR_ADAPTIVE_C", 10))
-
-        bw = cv2.adaptiveThreshold(
-            gray, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            block_size, C
-        )
-    else:
-        bw = gray
-
-    # Optional invert
-    if getattr(config, "OCR_AUTO_INVERT", True):
-        white_ratio = float((bw > 0).mean())
-        thr = float(getattr(config, "OCR_INVERT_WHITE_RATIO_THRESHOLD", 0.5))
-        if white_ratio < thr:
-            bw = 255 - bw
-
-    if bw.ndim == 2:
-        bgr = cv2.cvtColor(bw, cv2.COLOR_GRAY2BGR)
-    else:
-        bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-
-    return bgr
+    # codex update: no local OCR preprocessing required
+    return region_pil.convert("RGB")
 
 
 # -----------------------------
@@ -216,19 +116,21 @@ def refine_region(page_img: Image.Image, candidate_bbox: List[float]) -> Dict[st
     region_img = page_img.crop((cx0, cy0, cx1, cy1))
 
     try:
-        ocr = get_ocr()
-        region_bgr = preprocess_for_ocr(region_img)
+        region_rgb = preprocess_for_ocr(region_img)
+        crop_dir = getattr(config, "PADDLE_CROP_DIR", "output/paddle_crops")
+        os.makedirs(crop_dir, exist_ok=True)
+        crop_name = f"crop_{uuid.uuid4().hex}.png"
+        crop_path = os.path.join(crop_dir, crop_name)
+        region_rgb.save(crop_path)
 
-        # PaddleOCR 2.x: ocr.ocr(img, cls=True, det=True, rec=True) common
-        # PaddleOCR 3.x: signature may differ; auto-filter kwargs.
-        call_kwargs = {
-            "cls": bool(getattr(config, "OCR_CALL_CLS", True)),
-            "det": bool(getattr(config, "OCR_CALL_DET", True)),
-            "rec": bool(getattr(config, "OCR_CALL_REC", True)),
-        }
-        call_kwargs = _filter_kwargs(ocr.ocr, call_kwargs)
+        # codex update: use paddle-service OCR on crop
+        ocr_blocks = paddle_ocr(crop_path)
 
-        ocr_raw = ocr.ocr(region_bgr, **call_kwargs)  # type: ignore
+        if not getattr(config, "PADDLE_KEEP_CROPS", False):
+            try:
+                os.remove(crop_path)
+            except OSError:
+                pass
 
     except Exception as e:
         print(f"[refine_region] OCR error: {e}")
@@ -238,37 +140,20 @@ def refine_region(page_img: Image.Image, candidate_bbox: List[float]) -> Dict[st
     # - PaddleOCR 2.x often returns [ [ [box, (text, conf)], ... ] ]
     # - PaddleOCR 3.x may return list of result objects; but ocr.ocr still often returns nested list.
     # We handle the common nested-list path; if unknown, treat as "image".
-    try:
-        if not ocr_raw:
-            return {"type": "image", "bbox_px": candidate_bbox, "confidence": 0.80}
-
-        # If it’s list and first element is list => assume 2.x style
-        if isinstance(ocr_raw, list) and len(ocr_raw) > 0 and isinstance(ocr_raw[0], list):
-            lines = ocr_raw[0]
-        else:
-            # Unknown structure (3.x result objects etc.)
-            # For region-refiner (text-vs-image), safest fallback:
-            return {"type": "image", "bbox_px": candidate_bbox, "confidence": 0.80}
-
-    except Exception:
-        return {"type": "image", "bbox_px": candidate_bbox, "confidence": 0.80}
-
-    if not lines:
+    if not ocr_blocks:
         return {"type": "image", "bbox_px": candidate_bbox, "confidence": 0.80}
 
     ocr_results: List[Dict[str, Any]] = []
-    for item in lines:
+    for item in ocr_blocks:
         try:
-            pts4, (text, score) = item
-            text = (text or "").strip()
+            text = (item.get("text") or "").strip()
             if not text:
                 continue
-
-            xs = [p[0] for p in pts4]
-            ys = [p[1] for p in pts4]
-            bx0, by0, bx1, by1 = float(min(xs)), float(min(ys)), float(max(xs)), float(max(ys))
-
-            # region coords -> page coords
+            bbox = item.get("bbox", [])
+            if not bbox or len(bbox) < 4:
+                continue
+            bx0, by0, bx1, by1 = map(float, bbox[:4])
+            # crop coords -> page coords
             bx0 += cx0
             bx1 += cx0
             by0 += cy0
@@ -277,7 +162,7 @@ def refine_region(page_img: Image.Image, candidate_bbox: List[float]) -> Dict[st
             ocr_results.append({
                 "text": text,
                 "bbox": [bx0, by0, bx1, by1],
-                "conf": float(score) * 100.0,
+                "conf": float(item.get("score") or 0.0) * 100.0,
             })
         except Exception:
             continue

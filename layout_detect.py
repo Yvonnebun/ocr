@@ -10,6 +10,7 @@ from typing import List, Dict
 import config
 import os
 import time
+from run_logger import get_run_logger
 
 
 def _convert_to_shared_path(local_path: str) -> str:
@@ -70,6 +71,12 @@ def detect_layout(image_path: str) -> List[Dict]:
     """
     # Convert to shared volume path
     shared_path = _convert_to_shared_path(image_path)
+
+    # codex update: log layout-service call count
+    run_logger = get_run_logger()
+    if run_logger:
+        run_logger.increment("layout_calls")
+        run_logger.log_event("layout_call", {"image_path": shared_path})
     
     # Prepare request
     url = f"{config.LAYOUT_SERVICE_URL}/predict"
@@ -196,15 +203,29 @@ def filter_figure_blocks(layout_blocks: List[Dict]) -> List[Dict]:
     Returns:
         List of Figure blocks only
     """
+    # codex update: broaden acceptable labels for blueprint candidates
     figure_blocks = []
     all_types_seen = set()
     
+    allowed_types = {
+        "image",
+        "figure",
+        "picture",
+        "table",
+        "other",
+        "separator",
+        "imageregion",
+        "tableregion",
+        "otherregion",
+        "separatorregion",
+    }
+
     for block in layout_blocks:
         block_type = str(block.get('type', '')).strip()
         all_types_seen.add(block_type)
         
         # Strict match: only "Figure" (case-insensitive)
-        if block_type.lower() in {"image", "figure", "picture"}:
+        if block_type.lower().replace(" ", "") in allowed_types:
             figure_blocks.append(block)
     
     # DEBUG: Show what types we actually got
