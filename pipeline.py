@@ -16,6 +16,7 @@ from native_text import extract_native_text, filter_text_excluding_images
 from scanned_page import ocr_non_image_regions
 from page_gate import page_has_floorplan_keyword
 from run_logger import init_run_logger, get_run_logger
+import utils
 from caption_extract import (
     extract_captions_from_native,
     extract_captions_from_ocr,
@@ -94,15 +95,21 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     native_text_blocks, has_native_text = extract_native_text(
                         pdf_path, page_idx, width_px, height_px
                     )
-                    page_has_kw, gate_source = page_has_floorplan_keyword(
+                    page_has_kw, force_keep, gate_source = page_has_floorplan_keyword(
                         image_path, native_text_blocks
                     )
                     page_result["flags"]["page_keyword_gate"] = page_has_kw
                     page_result["flags"]["page_keyword_gate_source"] = gate_source
+                    page_result["flags"]["page_keyword_force_keep"] = force_keep
                     if run_logger:
                         run_logger.log_event(
                             "page_gate",
-                            {"page_idx": page_idx, "passed": page_has_kw, "source": gate_source}
+                            {
+                                "page_idx": page_idx,
+                                "passed": page_has_kw,
+                                "force_keep": force_keep,
+                                "source": gate_source,
+                            }
                         )
                 except Exception as e:
                     print(f"    WARNING in Step 1.5 (Page Gate): {e}")
@@ -110,6 +117,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     native_text_blocks = []
                     has_native_text = False
                     page_result["flags"]["page_keyword_gate"] = True
+                    page_result["flags"]["page_keyword_force_keep"] = False
                     page_result["flags"]["page_keyword_gate_source"] = "gate_error"
 
                 if not page_result["flags"]["page_keyword_gate"]:
@@ -133,12 +141,24 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 print(f"  Step 3: Filtering image candidates...")
                 figure_blocks = filter_figure_blocks(layout_blocks)
                 print(f"    Found {len(figure_blocks)} figure candidates")
-                
+
                 # Step 4: Region Refiner
                 print(f"  Step 4: Refining regions...")
                 if figure_blocks:
                     try:
-                        refine_result = refine_all_candidates(image_path, figure_blocks)
+                        candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
+                        candidate_bboxes = utils.preprocess_candidates(
+                            candidate_bboxes,
+                            width_px,
+                            height_px,
+                            min_w=config.CANDIDATE_MIN_W,
+                            min_h=config.CANDIDATE_MIN_H,
+                            overlap_th=config.CANDIDATE_OVERLAP_TH,
+                            min_area_ratio=config.CANDIDATE_MIN_AREA_RATIO,
+                            sidebar_params=config.SIDEBAR_PARAMS,
+                        )
+                        refined_candidates = [{"bbox_px": bbox, "source": "preprocess"} for bbox in candidate_bboxes]
+                        refine_result = refine_all_candidates(image_path, refined_candidates)
                         image_regions_final = refine_result['image_regions_final']
                         text_regions_override = refine_result['text_regions_override']
                         uncertain_regions = refine_result['uncertain']
@@ -163,7 +183,11 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 image_bboxes = [region['bbox_px'] for region in image_regions_final]
                 try:
                     extracted_images = extract_image_assets(
-                        image_path, image_regions_final, config.IMAGE_DIR, page_idx
+                        image_path,
+                        image_regions_final,
+                        config.IMAGE_DIR,
+                        page_idx,
+                        force_keep=page_result["flags"].get("page_keyword_force_keep", False),
                     )
                     print(f"    Extracted {len(extracted_images)} images")
                     if run_logger:

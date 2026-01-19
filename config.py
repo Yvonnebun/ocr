@@ -100,3 +100,10 @@ BLUEPRINT_COLOR_MAX = 0.30
 
 # codex update: test output root (ensure shared volume visibility)
 TEST_OUTPUT_DIR = os.getenv('TEST_OUTPUT_DIR', os.path.join(OUTPUT_DIR, 'test_outputs'))
+
+# codex update: candidate preprocessing (align with floorplan script)
+CANDIDATE_MIN_W = 12
+CANDIDATE_MIN_H = 12
+CANDIDATE_OVERLAP_TH = 0.30
+CANDIDATE_MIN_AREA_RATIO = 0.2
+SIDEBAR_PARAMS = dict(side_margin_ratio=0.12, min_height_ratio=0.55, max_width_ratio=0.22)

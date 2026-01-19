@@ -58,8 +58,13 @@ def _is_blueprint_like_crop(crop_bgr: np.ndarray, page_area: float) -> bool:
     return True
 
 
-def extract_image_assets(image_path: str, image_regions: List[Dict], 
-                        output_dir: str, page_idx: int) -> List[Dict]:
+def extract_image_assets(
+    image_path: str,
+    image_regions: List[Dict],
+    output_dir: str,
+    page_idx: int,
+    force_keep: bool = False,
+) -> List[Dict]:
     """
     Extract image assets by cropping regions from page image.
     
@@ -108,9 +113,10 @@ def extract_image_assets(image_path: str, image_regions: List[Dict],
         cropped = img.crop((x0, y0, x1, y1))
         crop_rgb = np.array(cropped)
         crop_bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
-        if not _is_blueprint_like_crop(crop_bgr, page_area):
-            # codex update: skip non-blueprint crops
-            continue
+        if not force_keep:
+            if not _is_blueprint_like_crop(crop_bgr, page_area):
+                # codex update: skip non-blueprint crops
+                continue
         
         # Save cropped image
         image_filename = f"page_{page_idx:04d}_image_{idx:04d}.png"

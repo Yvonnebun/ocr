@@ -7,6 +7,117 @@ from shapely.geometry import box as shapely_box
 from typing import List, Tuple, Dict, Any
 
 
+# codex update: candidate preprocessing helpers (align with floorplan script)
+def clamp_bbox_float(bbox: List[float], width: int, height: int) -> List[float]:
+    x0, y0, x1, y1 = bbox
+    x0 = float(max(0, min(width - 1, round(x0))))
+    x1 = float(max(0, min(width, round(x1))))
+    y0 = float(max(0, min(height - 1, round(y0))))
+    y1 = float(max(0, min(height, round(y1))))
+    if x1 <= x0:
+        x1 = min(float(width), x0 + 1.0)
+    if y1 <= y0:
+        y1 = min(float(height), y0 + 1.0)
+    return [x0, y0, x1, y1]
+
+
+def bbox_wh(bbox: List[float]) -> Tuple[float, float]:
+    x0, y0, x1, y1 = bbox
+    return max(0.0, x1 - x0), max(0.0, y1 - y0)
+
+
+def bbox_area(bbox: List[float]) -> float:
+    w, h = bbox_wh(bbox)
+    return w * h
+
+
+def bbox_intersection_area(a: List[float], b: List[float]) -> float:
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    x0, y0 = max(ax0, bx0), max(ay0, by0)
+    x1, y1 = min(ax1, bx1), min(ay1, by1)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    return (x1 - x0) * (y1 - y0)
+
+
+def overlap_ratio(a: List[float], b: List[float]) -> float:
+    inter = bbox_intersection_area(a, b)
+    mina = min(bbox_area(a), bbox_area(b)) + 1e-6
+    return float(inter / mina)
+
+
+def merge_union(a: List[float], b: List[float]) -> List[float]:
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    return [min(ax0, bx0), min(ay0, by0), max(ax1, bx1), max(ay1, by1)]
+
+
+def is_sidebar_bbox(
+    bbox: List[float],
+    width: int,
+    height: int,
+    side_margin_ratio: float = 0.12,
+    min_height_ratio: float = 0.55,
+    max_width_ratio: float = 0.22,
+) -> bool:
+    x0, y0, x1, y1 = bbox
+    bw = (x1 - x0) / (width + 1e-6)
+    bh = (y1 - y0) / (height + 1e-6)
+    near_left = (x0 / (width + 1e-6)) <= side_margin_ratio
+    near_right = (x1 / (width + 1e-6)) >= (1.0 - side_margin_ratio)
+    return (bh >= min_height_ratio) and (bw <= max_width_ratio) and (near_left or near_right)
+
+
+def merge_overlaps(candidates: List[List[float]], overlap_th: float) -> List[List[float]]:
+    if not candidates:
+        return []
+    candidates = sorted(candidates, key=bbox_area, reverse=True)
+    changed = True
+    while changed:
+        changed = False
+        kept: List[List[float]] = []
+        for bbox in candidates:
+            merged = False
+            for idx in range(len(kept)):
+                if overlap_ratio(bbox, kept[idx]) >= overlap_th:
+                    kept[idx] = merge_union(kept[idx], bbox)
+                    merged = True
+                    changed = True
+                    break
+            if not merged:
+                kept.append(bbox)
+        candidates = sorted(kept, key=bbox_area, reverse=True)
+    return candidates
+
+
+def preprocess_candidates(
+    candidates: List[List[float]],
+    width: int,
+    height: int,
+    min_w: float,
+    min_h: float,
+    overlap_th: float,
+    min_area_ratio: float,
+    sidebar_params: Dict[str, float],
+) -> List[List[float]]:
+    # codex update: align candidate cleanup with floorplan script
+    page_area = float(width * height)
+    tmp: List[List[float]] = []
+    for bbox in candidates:
+        bb = clamp_bbox_float(bbox, width, height)
+        bw, bh = bbox_wh(bb)
+        if bw < min_w or bh < min_h:
+            continue
+        tmp.append(bb)
+
+    tmp = [bbox for bbox in tmp if not is_sidebar_bbox(bbox, width, height, **sidebar_params)]
+    tmp = merge_overlaps(tmp, overlap_th=overlap_th)
+
+    final = [bbox for bbox in tmp if bbox_area(bbox) >= (page_area * min_area_ratio)]
+    return final
+
+
 def bbox_intersect(bbox1: List[float], bbox2: List[float]) -> bool:
     """
     Check if two bboxes intersect (pixel coordinates).
@@ -241,4 +352,3 @@ def pdf_coord_to_pixel(bbox_pdf: Tuple[float, float, float, float],
     y1_px = y1_pdf * scale_y
     
     return [x0_px, y0_px, x1_px, y1_px]
-

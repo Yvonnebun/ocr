@@ -40,31 +40,67 @@ def _ocr_items_from_service(image_path: str) -> List[Dict[str, float]]:
             continue
         x0, y0, x1, y1 = map(float, bbox[:4])
         h = max(1.0, y1 - y0)
-        items.append({"text": text, "bbox": [x0, y0, x1, y1], "h": h})
+        cx, cy = (x0 + x1) * 0.5, (y0 + y1) * 0.5
+        items.append({"text": text, "bbox": [x0, y0, x1, y1], "h": h, "cx": cx, "cy": cy})
     return items
 
 
-def _kw_match_floor_plan(items: List[Dict[str, Any]]) -> bool:
+def _kw_match_floor_plan(
+    items: List[Dict[str, Any]],
+    height_rel_tol: float = 0.25,
+    line_y_tol: float = 0.6,
+    gap_char_factor: float = 1.2,
+) -> bool:
+    # codex update: strict phrase matching aligned with floorplan script
     if not items:
         return False
+
     for item in items:
         text = item["text"]
-        if "floorplan" in text or "floor plan" in text:
+        if "floorplan" in text:
             return True
+        if "floor plan" in text:
+            return True
+
+    floors = [item for item in items if re.search(r"\bfloor\b", item["text"])]
+    plans = [item for item in items if re.search(r"\bplan\b", item["text"])]
+
+    if not floors or not plans:
+        return False
+
+    for floor_item in floors:
+        fx0, _, fx1, _ = floor_item["bbox"]
+        fh, fcy = floor_item["h"], floor_item["cy"]
+        for plan_item in plans:
+            px0, _, _, _ = plan_item["bbox"]
+            ph, pcy = plan_item["h"], plan_item["cy"]
+
+            mh = max(fh, ph)
+            if abs(fh - ph) / (mh + 1e-6) > height_rel_tol:
+                continue
+            if abs(fcy - pcy) > line_y_tol * mh:
+                continue
+            if px0 < fx0:
+                continue
+
+            gap = px0 - fx1
+            if gap <= gap_char_factor * mh:
+                return True
     return False
 
 
 def page_has_floorplan_keyword(
     image_path: str,
     native_text_blocks: Optional[List[Dict[str, Any]]],
-) -> Tuple[bool, str]:
+) -> Tuple[bool, bool, str]:
     # codex update: page-level keyword gate using native text then OCR
     native_text = " ".join(block.get("text", "") for block in (native_text_blocks or []))
     if native_text_has_kw(native_text):
-        return True, "native_text"
+        return True, False, "native_text"
 
     if not getattr(config, "GATE_USE_OCR", True):
-        return False, "native_text_miss"
+        return False, False, "native_text_miss"
 
     items = _ocr_items_from_service(image_path)
-    return _kw_match_floor_plan(items), "ocr"
+    hit = _kw_match_floor_plan(items)
+    return hit, hit, "ocr"

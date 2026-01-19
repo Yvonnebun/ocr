@@ -63,9 +63,12 @@ def main() -> int:
     # Block 2: Native text + keyword gate
     print("\n[Block 2] Keyword gate")
     native_text_blocks, _ = extract_native_text(pdf_path, 0, width_px, height_px)
-    gate_passed, gate_source = page_has_floorplan_keyword(image_path, native_text_blocks)
-    print(f"Gate passed: {gate_passed} (source={gate_source})")
-    run_logger.log_event("test_gate", {"passed": gate_passed, "source": gate_source})
+    gate_passed, force_keep, gate_source = page_has_floorplan_keyword(image_path, native_text_blocks)
+    print(f"Gate passed: {gate_passed} (force_keep={force_keep}, source={gate_source})")
+    run_logger.log_event(
+        "test_gate",
+        {"passed": gate_passed, "force_keep": force_keep, "source": gate_source},
+    )
 
     # Block 3: Layout detection
     print("\n[Block 3] Layout detection")
@@ -90,6 +93,7 @@ def main() -> int:
         image_regions,
         str(out_root / "extracted"),
         page_idx=0,
+        force_keep=force_keep,
     )
     print(f"Extracted images: {len(extracted_images)}")
     run_logger.record_images(extracted_images)
