@@ -44,7 +44,8 @@ def main() -> int:
         return 1
 
     run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    out_root = Path("test_outputs") / f"run_{run_id}"
+    # codex update: default test outputs under shared output directory
+    out_root = Path(config.TEST_OUTPUT_DIR) / f"run_{run_id}"
     out_root.mkdir(parents=True, exist_ok=True)
 
     run_logger = init_run_logger(str(out_root))

@@ -97,3 +97,6 @@ BLUEPRINT_FILTER_ENABLED = True
 BLUEPRINT_MIN_AREA_RATIO = 0.35
 BLUEPRINT_EDGE_DENSITY_MIN = 0.010
 BLUEPRINT_COLOR_MAX = 0.30
+
+# codex update: test output root (ensure shared volume visibility)
+TEST_OUTPUT_DIR = os.getenv('TEST_OUTPUT_DIR', os.path.join(OUTPUT_DIR, 'test_outputs'))
