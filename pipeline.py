@@ -9,7 +9,6 @@ from typing import Dict, List
 import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
-from region_refiner import refine_all_candidates
 from image_extraction import extract_image_assets
 from image_ocr import ocr_all_images
 from native_text import extract_native_text, filter_text_excluding_images
@@ -142,9 +141,8 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 figure_blocks = filter_figure_blocks(layout_blocks)
                 print(f"    Found {len(figure_blocks)} figure candidates")
 
-                # Step 4: Region Refiner
-                # codex update: temporarily bypass region_refiner (kept below as comments for later gate work)
-                print(f"  Step 4: Refining regions (bypassed)...")
+                # Step 4: Region Refiner (removed)
+                # codex update: skip region_refiner entirely; use preprocessed candidates directly
                 if figure_blocks:
                     try:
                         candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
@@ -160,50 +158,14 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         )
                         image_regions_final = [{"bbox_px": bbox, "source": "preprocess"} for bbox in candidate_bboxes]
                         text_regions_override = []
-                        print(f"    Kept {len(image_regions_final)} image regions (no refiner)")
                     except Exception as e:
-                        print(f"    WARNING in Step 4 (Region Refiner Bypass): {e}")
+                        print(f"    WARNING in Step 4 (Preprocess Candidates): {e}")
                         traceback.print_exc()
                         image_regions_final = []
                         text_regions_override = []
                 else:
                     image_regions_final = []
                     text_regions_override = []
-                # codex update: original refiner logic (commented out, keep for later gate work)
-                # print(f"  Step 4: Refining regions...")
-                # if figure_blocks:
-                #     try:
-                #         candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
-                #         candidate_bboxes = utils.preprocess_candidates(
-                #             candidate_bboxes,
-                #             width_px,
-                #             height_px,
-                #             min_w=config.CANDIDATE_MIN_W,
-                #             min_h=config.CANDIDATE_MIN_H,
-                #             overlap_th=config.CANDIDATE_OVERLAP_TH,
-                #             min_area_ratio=config.CANDIDATE_MIN_AREA_RATIO,
-                #             sidebar_params=config.SIDEBAR_PARAMS,
-                #         )
-                #         refined_candidates = [{"bbox_px": bbox, "source": "preprocess"} for bbox in candidate_bboxes]
-                #         refine_result = refine_all_candidates(image_path, refined_candidates)
-                #         image_regions_final = refine_result['image_regions_final']
-                #         text_regions_override = refine_result['text_regions_override']
-                #         uncertain_regions = refine_result['uncertain']
-                #
-                #         print(f"    Refined to {len(image_regions_final)} image regions")
-                #         print(f"    {len(text_regions_override)} regions overridden as text")
-                #         print(f"    {len(uncertain_regions)} uncertain regions (not used in MVP)")
-                #
-                #         # MVP: uncertain regions are ignored (not output, not used)
-                #         # They don't go into image_regions_final or text_regions_override
-                #     except Exception as e:
-                #         print(f"    WARNING in Step 4 (Region Refiner): {e}")
-                #         traceback.print_exc()
-                #         image_regions_final = []
-                #         text_regions_override = []
-                # else:
-                #     image_regions_final = []
-                #     text_regions_override = []
                 
                 # Step 5: Image Asset Extraction
                 print(f"  Step 5: Extracting image assets...")
