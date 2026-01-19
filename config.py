@@ -92,6 +92,14 @@ GATE_OCR_PARAMS = dict(
     text_det_unclip_ratio=1.8,
 )
 
+# codex update: OCR gate preprocessing (align with floorplan script)
+KW_STRIP_Y0_RATIO = 0.80
+KW_OCR_MAX_SIDE = 3840
+KW_OCR_MIN_UPSCALE = 2.0
+KW_OCR_MAX_UPSCALE = 4.0
+GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(OUTPUT_DIR, 'gate_preprocess'))
+GATE_KEEP_PREPROCESS = os.getenv('GATE_KEEP_PREPROCESS', 'false').lower() == 'true'
+
 # codex update: blueprint visual prefilter
 BLUEPRINT_FILTER_ENABLED = True
 BLUEPRINT_MIN_AREA_RATIO = 0.35

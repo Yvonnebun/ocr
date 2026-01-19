@@ -4,7 +4,12 @@ Page-level keyword gate for floorplan detection.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+import os
 import re
+import uuid
+
+import cv2
+import numpy as np
 
 import config
 from ocr_service import paddle_ocr
@@ -25,6 +30,75 @@ def native_text_has_kw(native_text: str) -> bool:
     # codex update: check keyword hit in native PDF text
     normalized = _normalize_text(native_text)
     return any(kw in normalized for kw in _keywords())
+
+
+def _resize_proportional(img_bgr: np.ndarray, limit: int) -> Tuple[np.ndarray, float]:
+    h, w = img_bgr.shape[:2]
+    max_side = max(h, w)
+    if max_side <= limit:
+        return img_bgr, 1.0
+    ratio = limit / float(max_side)
+    new_w, new_h = max(1, int(round(w * ratio))), max(1, int(round(h * ratio)))
+    return cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA), ratio
+
+
+def _upscale_to_limit(
+    img_bgr: np.ndarray,
+    max_side: int,
+    min_scale: float,
+    max_scale: float,
+) -> Tuple[np.ndarray, float]:
+    h, w = img_bgr.shape[:2]
+    scale_cap = max_side / float(max(h, w) + 1e-6)
+    scale = min(max_scale, max(min_scale, scale_cap))
+    if scale <= 1.01:
+        return img_bgr, 1.0
+    new_w, new_h = int(round(w * scale)), int(round(h * scale))
+    out = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    return out, float(scale)
+
+
+def _preprocess_for_kw_ocr(img_bgr: np.ndarray, sharpen: bool = True) -> np.ndarray:
+    # codex update: align keyword OCR preprocessing with floorplan script
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+
+    if sharpen:
+        blur = cv2.GaussianBlur(gray, (0, 0), 1.0)
+        gray = cv2.addWeighted(gray, 1.6, blur, -0.6, 0)
+
+    return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+
+def _prepare_gate_image(image_path: str) -> Optional[str]:
+    # codex update: preprocess and save gate image for paddle-service
+    img_bgr = cv2.imread(image_path)
+    if img_bgr is None:
+        return None
+
+    h, w = img_bgr.shape[:2]
+    strip_ratio = float(getattr(config, "KW_STRIP_Y0_RATIO", 0.80))
+    if 0 < strip_ratio < 1:
+        y0 = int(round(h * strip_ratio))
+        if y0 < h:
+            img_bgr = img_bgr[y0:h, :, :]
+
+    img_bgr, _ = _resize_proportional(img_bgr, limit=int(getattr(config, "KW_OCR_MAX_SIDE", 3840)))
+    img_bgr, _ = _upscale_to_limit(
+        img_bgr,
+        max_side=int(getattr(config, "KW_OCR_MAX_SIDE", 3840)),
+        min_scale=float(getattr(config, "KW_OCR_MIN_UPSCALE", 2.0)),
+        max_scale=float(getattr(config, "KW_OCR_MAX_UPSCALE", 4.0)),
+    )
+    img_bgr = _preprocess_for_kw_ocr(img_bgr, sharpen=True)
+
+    out_dir = getattr(config, "GATE_PREPROCESS_DIR", os.path.join("output", "gate_preprocess"))
+    os.makedirs(out_dir, exist_ok=True)
+    out_name = f"gate_{uuid.uuid4().hex}.png"
+    out_path = os.path.join(out_dir, out_name)
+    cv2.imwrite(out_path, img_bgr)
+    return out_path
 
 
 def _ocr_items_from_service(image_path: str) -> List[Dict[str, float]]:
@@ -101,6 +175,14 @@ def page_has_floorplan_keyword(
     if not getattr(config, "GATE_USE_OCR", True):
         return False, False, "native_text_miss"
 
-    items = _ocr_items_from_service(image_path)
+    preprocessed_path = _prepare_gate_image(image_path)
+    if preprocessed_path is None:
+        return False, False, "image_load_failed"
+    items = _ocr_items_from_service(preprocessed_path)
+    if not getattr(config, "GATE_KEEP_PREPROCESS", False):
+        try:
+            os.remove(preprocessed_path)
+        except OSError:
+            pass
     hit = _kw_match_floor_plan(items)
     return hit, hit, "ocr"
