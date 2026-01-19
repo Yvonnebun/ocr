@@ -21,6 +21,14 @@ LAYOUT_CONNECT_TIMEOUT = float(os.getenv('LAYOUT_CONNECT_TIMEOUT', '5'))  # seco
 LAYOUT_READ_TIMEOUT = float(os.getenv('LAYOUT_READ_TIMEOUT', '30'))  # seconds
 LAYOUT_MAX_RETRIES = int(os.getenv('LAYOUT_MAX_RETRIES', '2'))  # number of retries
 
+# codex update: PaddleOCR service configuration (HTTP client)
+PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://localhost:8002')
+PADDLE_CONNECT_TIMEOUT = float(os.getenv('PADDLE_CONNECT_TIMEOUT', '5'))
+PADDLE_READ_TIMEOUT = float(os.getenv('PADDLE_READ_TIMEOUT', '60'))
+PADDLE_MAX_RETRIES = int(os.getenv('PADDLE_MAX_RETRIES', '2'))
+PADDLE_CROP_DIR = os.getenv('PADDLE_CROP_DIR', os.path.join(OUTPUT_DIR, 'paddle_crops'))
+PADDLE_KEEP_CROPS = os.getenv('PADDLE_KEEP_CROPS', 'false').lower() == 'true'
+
 # OCR config
 OCR_LANG = "eng+chi_sim"  # English + Simplified Chinese
 TESSERACT_CMD = "C:/Program Files/Tesseract-OCR/tesseract.exe" # Auto-detect, or set path if needed
