@@ -17,9 +17,10 @@ import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
 from image_extraction import extract_image_assets
-from native_text import extract_native_text
+from native_text import extract_native_text, filter_text_excluding_images
 from page_gate import page_has_floorplan_keyword
 from run_logger import init_run_logger, get_run_logger
+from ocr_service import paddle_ocr
 import utils
 
 
@@ -59,13 +60,14 @@ def main() -> int:
 
     extracted_images_all: List[Dict] = []
     page_summaries: List[Dict] = []
+    text_outputs: List[Dict] = []
 
     for page_idx, (image_path, width_px, height_px) in enumerate(page_info):
         print(f"\n[Page {page_idx + 1}/{len(page_info)}]")
 
         # Block 2: Native text + keyword gate
         print("[Block 2] Keyword gate")
-        native_text_blocks, _ = extract_native_text(pdf_path, page_idx, width_px, height_px)
+        native_text_blocks, has_native_text = extract_native_text(pdf_path, page_idx, width_px, height_px)
         gate_passed, force_keep, gate_source = page_has_floorplan_keyword(image_path, native_text_blocks)
         print(f"Gate passed: {gate_passed} (force_keep={force_keep}, source={gate_source})")
         run_logger.log_event(
@@ -83,6 +85,8 @@ def main() -> int:
                     "figure_blocks": 0,
                     "image_regions": 0,
                     "extracted_images": [],
+                    "text_block_count": 0,
+                    "text_content": "",
                 }
             )
             continue
@@ -137,6 +141,34 @@ def main() -> int:
         run_logger.record_images(extracted_images)
         extracted_images_all.extend(extracted_images)
 
+        # Block 5.5: Text extraction (native or OCR) excluding image regions
+        print("[Block 5.5] Text extraction")
+        text_blocks: List[Dict] = []
+        if has_native_text:
+            try:
+                text_blocks = filter_text_excluding_images(native_text_blocks, image_bbox)
+            except Exception:
+                text_blocks = native_text_blocks
+        else:
+            try:
+                ocr_blocks = paddle_ocr(image_path)
+                text_blocks = [
+                    {"text": block.get("text", ""), "bbox_px": block.get("bbox", [])}
+                    for block in ocr_blocks
+                    if block.get("bbox")
+                ]
+                text_blocks = utils.filter_text_by_regions(text_blocks, image_bbox, threshold=0.5)
+            except Exception:
+                text_blocks = []
+        text_content = " ".join(
+            block.get("text", "").strip() for block in text_blocks if block.get("text", "").strip()
+        )
+        text_path = out_root / f"text_page_{page_idx:04d}.txt"
+        with open(text_path, "w", encoding="utf-8") as text_handle:
+            text_handle.write(text_content)
+        text_outputs.append({"page_idx": page_idx, "text_path": str(text_path)})
+        print(f"Text blocks: {len(text_blocks)}")
+
         page_summaries.append(
             {
                 "page_idx": page_idx,
@@ -146,6 +178,8 @@ def main() -> int:
                 "figure_blocks": len(figure_blocks),
                 "image_regions": len(image_regions),
                 "extracted_images": [img["image_path"] for img in extracted_images],
+                "text_block_count": len(text_blocks),
+                "text_content": text_content,
             }
         )
 
@@ -157,6 +191,7 @@ def main() -> int:
         "elapsed_seconds": round(elapsed, 3),
         "pages": page_summaries,
         "extracted_images": [img["image_path"] for img in extracted_images_all],
+        "text_outputs": text_outputs,
     }
     with open(out_root / "summary.json", "w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
