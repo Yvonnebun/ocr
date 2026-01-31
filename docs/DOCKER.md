@@ -2,6 +2,8 @@
 
 This repo does not require Docker for basic unit tests, but using Docker keeps
 dependencies (especially Ultralytics + torch) consistent across machines.
+PaddleOCR and Detectron2 should be run via their dedicated Docker images rather
+than installed locally.
 
 ## Build
 
