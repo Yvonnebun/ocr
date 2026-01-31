@@ -2,6 +2,8 @@
 
 This repo does not require Docker for basic unit tests, but using Docker keeps
 dependencies (especially Ultralytics + torch) consistent across machines.
+The base image includes CUDA so the container can access GPUs when you run with
+the NVIDIA container runtime.
 PaddleOCR and Detectron2 should be run via their dedicated Docker images rather
 than installed locally.
 
@@ -23,6 +25,7 @@ Mount your local files (image + weights) into the container, then run:
 
 ```bash
 docker run --rm -it \
+  --gpus all \
   -v "$PWD:/app" \
   ocr-pipeline \
   python examples/run_floorplan_pipeline.py
