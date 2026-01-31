@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import sys
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -21,11 +22,13 @@ def main() -> None:
     if image_bgr is None:
         raise FileNotFoundError(f"Image not found: {image_path}")
 
+    device = os.getenv("YOLO_DEVICE", "cpu")
     predictor = FloorplanPipelinePredictor(
         wall_a_weights=wall_a_weights,
         wall_b_weights=wall_b_weights,
         room_weights=room_weights,
         window_weights=window_weights,
+        device=device,
     )
     bundle = predictor.predict_bundle(image_bgr)
 
