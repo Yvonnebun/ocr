@@ -100,11 +100,35 @@ KW_OCR_MAX_UPSCALE = 4.0
 GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(OUTPUT_DIR, 'gate_preprocess'))
 GATE_KEEP_PREPROCESS = os.getenv('GATE_KEEP_PREPROCESS', 'false').lower() == 'true'
 
+# codex update: PDF render settings
+RENDER_DPI = int(os.getenv("RENDER_DPI", "200"))
+
 # codex update: blueprint visual prefilter
 BLUEPRINT_FILTER_ENABLED = True
 BLUEPRINT_MIN_AREA_RATIO = 0.35
 BLUEPRINT_EDGE_DENSITY_MIN = 0.010
 BLUEPRINT_COLOR_MAX = 0.30
+
+# codex update: door detection (YOLO)
+DOOR_DETECT_ENABLED = os.getenv("DOOR_DETECT_ENABLED", "true").lower() == "true"
+DOOR_MODEL_PATH = os.getenv("DOOR_MODEL_PATH", "")
+DOOR_CONF_THRESHOLD = float(os.getenv("DOOR_CONF_THRESHOLD", "0.25"))
+DOOR_IOU_THRESHOLD = float(os.getenv("DOOR_IOU_THRESHOLD", "0.45"))
+DOOR_CLASS_NAMES = [name.strip().lower() for name in os.getenv("DOOR_CLASS_NAMES", "door").split(",") if name.strip()]
+DOOR_MIN_COUNT = int(os.getenv("DOOR_MIN_COUNT", "2"))
+
+# codex update: candidate padding expansion
+CANDIDATE_PAD_RATIO = float(os.getenv("CANDIDATE_PAD_RATIO", "0.2"))
+CANDIDATE_MIN_PAD = int(os.getenv("CANDIDATE_MIN_PAD", "32"))
+CANDIDATE_MAX_PAD = int(os.getenv("CANDIDATE_MAX_PAD", "512"))
+
+# codex update: table keyword extraction
+TABLE_KEYWORDS = [
+    "area schedule",
+    "square",
+    "floor area's (sq.ft.)",
+    "sq.ft.",
+]
 
 # codex update: test output root (ensure shared volume visibility)
 TEST_OUTPUT_DIR = os.getenv('TEST_OUTPUT_DIR', os.path.join(OUTPUT_DIR, 'test_outputs'))

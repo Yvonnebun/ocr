@@ -141,7 +141,8 @@ def extract_image_assets(
         
         extracted_images.append({
             'image_path': image_path_out,
-            'bbox_px': bbox
+            'bbox_px': bbox,
+            'image_size': [cropped.size[0], cropped.size[1]],
         })
     
     if run_logger:

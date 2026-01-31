@@ -28,9 +28,9 @@ def render_pdf_pages(pdf_path: str, output_dir: str = None) -> List[Tuple[str, i
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        # Convert PDF to images (DPI=200 for good quality)
+        # Convert PDF to images (DPI from config for good quality)
         print(f"  Converting PDF to images (this may take a while)...")
-        images = convert_from_path(pdf_path, dpi=200)
+        images = convert_from_path(pdf_path, dpi=config.RENDER_DPI)
         print(f"  Converted {len(images)} pages")
     except Exception as e:
         raise RuntimeError(f"Failed to convert PDF to images: {e}. Make sure Poppler is installed and in PATH.")
@@ -52,4 +52,3 @@ def render_pdf_pages(pdf_path: str, output_dir: str = None) -> List[Tuple[str, i
         raise RuntimeError("No pages were successfully rendered")
     
     return page_info
-

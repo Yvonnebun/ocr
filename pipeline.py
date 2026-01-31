@@ -9,6 +9,7 @@ from typing import Dict, List
 import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
+from door_detect import detect_door_count
 from image_extraction import extract_image_assets
 from image_ocr import ocr_all_images
 from native_text import extract_native_text, filter_text_excluding_images
@@ -16,6 +17,7 @@ from scanned_page import ocr_non_image_regions
 from page_gate import page_has_floorplan_keyword
 from run_logger import init_run_logger, get_run_logger
 import utils
+from table_extract import extract_keyword_tables
 from caption_extract import (
     extract_captions_from_native,
     extract_captions_from_ocr,
@@ -60,10 +62,14 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
         
         result = {
             "meta": {
-                "page_count": page_count
+                "page_count": page_count,
+                "pdf_name": os.path.basename(pdf_path),
+                "render_dpi": config.RENDER_DPI,
             },
             "text_content": "",
-            "pages": []
+            "pages": [],
+            "selected_pages": [],
+            "rejected_pages": [],
         }
         
         all_text_content = []
@@ -77,6 +83,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     run_logger.increment("pages_processed")
                     run_logger.log_event("page_start", {"page_idx": page_idx, "image_path": image_path})
                 
+                page_size_in = [width_px / config.RENDER_DPI, height_px / config.RENDER_DPI]
                 page_result = {
                     "page_idx": page_idx,
                     "flags": {
@@ -84,7 +91,12 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         "page_keyword_gate": True
                     },
                     "images": [],
-                    "captions": []
+                    "captions": [],
+                    "tables": [],
+                    "door_count": 0,
+                    "page_size_in": page_size_in,
+                    "render_dpi": config.RENDER_DPI,
+                    "pdf_name": os.path.basename(pdf_path),
                 }
 
                 # Step 1.5: Page keyword gate (native text + OCR)
@@ -141,11 +153,48 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 figure_blocks = filter_figure_blocks(layout_blocks)
                 print(f"    Found {len(figure_blocks)} figure candidates")
 
+                # Step 3.5: Door detection gate
+                print(f"  Step 3.5: Detecting doors...")
+                try:
+                    door_count, door_stats = detect_door_count(image_path)
+                    page_result["door_count"] = door_count
+                    if run_logger:
+                        run_logger.log_event(
+                            "door_detect",
+                            {"page_idx": page_idx, "door_count": door_count, **door_stats},
+                        )
+                except Exception as e:
+                    print(f"    WARNING in Step 3.5 (Door Detect): {e}")
+                    traceback.print_exc()
+                    door_count = 0
+                    page_result["door_count"] = door_count
+
+                if door_count < config.DOOR_MIN_COUNT:
+                    print(f"  Page {page_idx + 1} skipped by door gate (door_count={door_count})")
+                    result["rejected_pages"].append(page_idx)
+                    result["pages"].append(page_result)
+                    if run_logger:
+                        run_logger.log_event(
+                            "page_skipped",
+                            {"page_idx": page_idx, "reason": "door_gate", "door_count": door_count},
+                        )
+                    continue
+
                 # Step 4: Region Refiner (removed)
                 # codex update: skip region_refiner entirely; use preprocessed candidates directly
                 if figure_blocks:
                     try:
-                        candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
+                        candidate_bboxes = [
+                            utils.expand_bbox_with_padding(
+                                block["bbox_px"],
+                                width_px,
+                                height_px,
+                                pad_ratio=config.CANDIDATE_PAD_RATIO,
+                                min_pad=config.CANDIDATE_MIN_PAD,
+                                max_pad=config.CANDIDATE_MAX_PAD,
+                            )
+                            for block in figure_blocks
+                        ]
                         candidate_bboxes = utils.preprocess_candidates(
                             candidate_bboxes,
                             width_px,
@@ -232,6 +281,28 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         traceback.print_exc()
                         ocr_text_blocks = []
                         clean_text_blocks = []
+
+                # Step 9.5: Extract keyword tables on selected pages
+                print(f"  Step 9.5: Extracting keyword tables...")
+                try:
+                    table_blocks = [
+                        block
+                        for block in layout_blocks
+                        if str(block.get("type", "")).strip().lower().replace(" ", "")
+                        in {"table", "tableregion"}
+                    ]
+                    table_text_blocks = native_text_blocks if has_native_text else ocr_text_blocks
+                    page_result["tables"] = extract_keyword_tables(
+                        image_path,
+                        table_blocks,
+                        table_text_blocks,
+                        config.IMAGE_DIR,
+                        page_idx,
+                    )
+                except Exception as e:
+                    print(f"    WARNING in Step 9.5 (Table Extract): {e}")
+                    traceback.print_exc()
+                    page_result["tables"] = []
                 
                 # Caption Extraction
                 print(f"  Extracting captions...")
@@ -264,6 +335,18 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 all_text_content.append(page_text)
                 
                 result["pages"].append(page_result)
+                result["selected_pages"].append(
+                    {
+                        "page_idx": page_idx,
+                        "images": page_result["images"],
+                        "image_sizes": [img.get("image_size") for img in page_result["images"]],
+                        "door_count": page_result["door_count"],
+                        "page_size_in": page_result["page_size_in"],
+                        "render_dpi": config.RENDER_DPI,
+                        "pdf_name": os.path.basename(pdf_path),
+                        "tables": page_result["tables"],
+                    }
+                )
                 print(f"  Page {page_idx + 1} completed")
                 if run_logger:
                     run_logger.log_event("page_complete", {"page_idx": page_idx})
