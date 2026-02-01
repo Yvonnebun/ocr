@@ -31,7 +31,6 @@ PADDLE_KEEP_CROPS = os.getenv('PADDLE_KEEP_CROPS', 'false').lower() == 'true'
 
 # OCR config
 OCR_LANG = "eng+chi_sim"  # English + Simplified Chinese
-TESSERACT_CMD = "C:/Program Files/Tesseract-OCR/tesseract.exe" # Auto-detect, or set path if needed
 
 # Region Refiner thresholds (configurable hyperparameters)
 # These are used to distinguish text blocks from image regions

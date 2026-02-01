@@ -1,16 +1,10 @@
 """
 Step 9: Scanned Page Handling - OCR on non-image regions
 """
-import pytesseract
-from PIL import Image
-import numpy as np
-from typing import List, Dict
-import config
-import utils
-import config
+from typing import Dict, List
 
-if config.TESSERACT_CMD:
-    pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
+from ocr_service import paddle_ocr
+import utils
 
 def ocr_non_image_regions(image_path: str, image_regions: List[List[float]]) -> List[Dict]:
     """
@@ -23,62 +17,49 @@ def ocr_non_image_regions(image_path: str, image_regions: List[List[float]]) -> 
     Returns:
         List of text blocks: [{'text': str, 'bbox_px': [x0, y0, x1, y1]}, ...]
     """
-    img = Image.open(image_path)
-    width, height = img.size
-    
-    # Run OCR on full page
     try:
-        ocr_data = pytesseract.image_to_data(
-            img,
-            lang=config.OCR_LANG,
-            output_type=pytesseract.Output.DICT
-        )
+        ocr_blocks = paddle_ocr(image_path)
     except Exception as e:
         print(f"OCR error: {e}")
         return []
-    
-    # Group words into lines and blocks
+
     words = []
-    n_boxes = len(ocr_data['text'])
-    
-    for i in range(n_boxes):
-        text = ocr_data['text'][i].strip()
-        conf = int(ocr_data['conf'][i])
-        
-        if text and conf > 0:
-            left = ocr_data['left'][i]
-            top = ocr_data['top'][i]
-            width_box = ocr_data['width'][i]
-            height_box = ocr_data['height'][i]
-            bbox = [left, top, left + width_box, top + height_box]
-            
-            # Check if this word overlaps with any image region
-            overlaps_image = False
-            for img_bbox in image_regions:
-                if utils.bbox_intersect(bbox, img_bbox):
-                    overlaps_image = True
-                    break
-            
-            if not overlaps_image:
-                words.append({
-                    'text': text,
-                    'bbox': bbox,
-                    'y_center': top + height_box / 2
-                })
-    
+    for block in ocr_blocks:
+        text = (block.get("text") or "").strip()
+        bbox = block.get("bbox") or []
+        if not text or len(bbox) < 4:
+            continue
+
+        x0, y0, x1, y1 = map(float, bbox[:4])
+        word_bbox = [x0, y0, x1, y1]
+
+        overlaps_image = False
+        for img_bbox in image_regions:
+            if utils.bbox_intersect(word_bbox, img_bbox):
+                overlaps_image = True
+                break
+
+        if overlaps_image:
+            continue
+
+        words.append({
+            "text": text,
+            "bbox": word_bbox,
+            "y_center": (y0 + y1) / 2,
+        })
+
     if not words:
         return []
-    
-    # Group words into lines (by y-coordinate)
-    words.sort(key=lambda w: (w['y_center'], w['bbox'][0]))
-    
+
+    words.sort(key=lambda w: (w["y_center"], w["bbox"][0]))
+
     lines = []
     current_line = []
     current_y = None
-    
+
     for word in words:
-        y = word['y_center']
-        if current_y is None or abs(y - current_y) < 10:  # Same line
+        y = word["y_center"]
+        if current_y is None or abs(y - current_y) < 10:
             current_line.append(word)
             current_y = y if current_y is None else (current_y + y) / 2
         else:
@@ -86,26 +67,24 @@ def ocr_non_image_regions(image_path: str, image_regions: List[List[float]]) -> 
                 lines.append(current_line)
             current_line = [word]
             current_y = y
-    
+
     if current_line:
         lines.append(current_line)
-    
-    # Convert lines to text blocks
+
     text_blocks = []
     for line in lines:
         if not line:
             continue
-        
-        # Merge words in line
-        line_text = " ".join(w['text'] for w in line)
-        x0 = min(w['bbox'][0] for w in line)
-        y0 = min(w['bbox'][1] for w in line)
-        x1 = max(w['bbox'][2] for w in line)
-        y1 = max(w['bbox'][3] for w in line)
-        
+
+        line_text = " ".join(w["text"] for w in line)
+        x0 = min(w["bbox"][0] for w in line)
+        y0 = min(w["bbox"][1] for w in line)
+        x1 = max(w["bbox"][2] for w in line)
+        y1 = max(w["bbox"][3] for w in line)
+
         text_blocks.append({
-            'text': line_text,
-            'bbox_px': [x0, y0, x1, y1]
+            "text": line_text,
+            "bbox_px": [x0, y0, x1, y1],
         })
     
     # Merge nearby lines into paragraphs
@@ -133,4 +112,3 @@ def ocr_non_image_regions(image_path: str, image_regions: List[List[float]]) -> 
             merged_blocks.append(block)
     
     return merged_blocks
-
