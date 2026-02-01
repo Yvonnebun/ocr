@@ -51,7 +51,6 @@ else:
 # 3. 测试依赖包
 print("\n[3] 测试依赖包...")
 dependencies = {
-    'pdf2image': 'pdf2image',
     'PIL': 'Pillow',
     'layoutparser': 'layoutparser',
     'fitz': 'pymupdf',
