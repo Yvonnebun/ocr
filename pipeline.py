@@ -225,19 +225,19 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         extracted["polygons"] = (
                             result.get("polys")
                             or result.get("polygons")
+                            or result.get("room", {}).get("result", {}).get("polygons")
                             or [item.get("poly") for item in result.get("rooms", []) if item.get("poly")]
                         )
                     except Exception as e:
                         print(f"    WARNING in Step 5.5 (Inference Service): {e}")
                         inference_error = str(e)
                         extracted["inference_error"] = inference_error
-                        if "Cannot connect to inference service" in inference_error:
-                            inference_available = False
-                            if run_logger:
-                                run_logger.log_event(
-                                    "inference_unavailable",
-                                    {"page_idx": page_idx, "error": inference_error},
-                                )
+                        inference_available = False
+                        if run_logger:
+                            run_logger.log_event(
+                                "inference_unavailable",
+                                {"page_idx": page_idx, "error": inference_error},
+                            )
                 if inference_error:
                     page_result["flags"]["inference_error"] = inference_error
 
