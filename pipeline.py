@@ -12,6 +12,7 @@ from layout_detect import detect_layout, filter_figure_blocks
 from door_detect import detect_door_count
 from image_extraction import extract_image_assets
 from image_ocr import ocr_all_images
+from inference_service import infer_polygons
 from native_text import extract_native_text, filter_text_excluding_images
 from scanned_page import ocr_non_image_regions
 from page_gate import page_has_floorplan_keyword
@@ -208,8 +209,25 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     traceback.print_exc()
                     extracted_images = []
 
-                # Step 5.5: Door detection gate (after crop & merge)
-                print(f"  Step 5.5: Detecting doors...")
+                # Step 5.5: Inference service (polygons) on extracted images
+                print(f"  Step 5.5: Running inference service...")
+                for extracted in extracted_images:
+                    image_path_out = extracted.get("image_path")
+                    if not image_path_out:
+                        continue
+                    try:
+                        result = infer_polygons(image_path_out)
+                        extracted["inference"] = result
+                        extracted["polygons"] = (
+                            result.get("polys")
+                            or result.get("polygons")
+                            or [item.get("poly") for item in result.get("rooms", []) if item.get("poly")]
+                        )
+                    except Exception as e:
+                        print(f"    WARNING in Step 5.5 (Inference Service): {e}")
+
+                # Step 5.6: Door detection gate (after crop & merge)
+                print(f"  Step 5.6: Detecting doors...")
                 try:
                     door_count = 0
                     door_stats: Dict[str, float] = {}
@@ -232,7 +250,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                             },
                         )
                 except Exception as e:
-                    print(f"    WARNING in Step 5.5 (Door Detect): {e}")
+                    print(f"    WARNING in Step 5.6 (Door Detect): {e}")
                     traceback.print_exc()
                     door_count = 0
                     page_result["door_count"] = door_count

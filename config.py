@@ -30,6 +30,12 @@ PADDLE_MAX_RETRIES = int(os.getenv('PADDLE_MAX_RETRIES', '2'))
 PADDLE_CROP_DIR = os.getenv('PADDLE_CROP_DIR', os.path.join(OUTPUT_DIR, 'paddle_crops'))
 PADDLE_KEEP_CROPS = os.getenv('PADDLE_KEEP_CROPS', 'false').lower() == 'true'
 
+# codex update: inference service configuration (HTTP client)
+INFERENCE_SERVICE_URL = os.getenv('INFERENCE_SERVICE_URL', 'http://host.docker.internal:8003')
+INFERENCE_CONNECT_TIMEOUT = float(os.getenv('INFERENCE_CONNECT_TIMEOUT', '5'))
+INFERENCE_READ_TIMEOUT = float(os.getenv('INFERENCE_READ_TIMEOUT', '120'))
+INFERENCE_MAX_RETRIES = int(os.getenv('INFERENCE_MAX_RETRIES', '1'))
+
 # OCR config
 OCR_LANG = "eng+chi_sim"  # English + Simplified Chinese
 
