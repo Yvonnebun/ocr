@@ -231,10 +231,12 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 try:
                     door_count = 0
                     door_stats: Dict[str, float] = {}
+                    seen_crops = set()
                     for extracted in extracted_images:
                         crop_path = extracted.get("image_path")
-                        if not crop_path:
+                        if not crop_path or crop_path in seen_crops:
                             continue
+                        seen_crops.add(crop_path)
                         crop_count, crop_stats = detect_door_count(crop_path)
                         door_count += crop_count
                         door_stats = crop_stats
@@ -245,7 +247,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                             {
                                 "page_idx": page_idx,
                                 "door_count": door_count,
-                                "crop_count": float(len(extracted_images)),
+                                "crop_count": float(len(seen_crops)),
                                 **door_stats,
                             },
                         )
