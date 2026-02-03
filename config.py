@@ -10,7 +10,8 @@ RENDER_DIR = os.path.join(OUTPUT_DIR, "renders")
 
 # Layout Service Configuration (HTTP client)
 # Layout detection is done via HTTP call to layout-service running in Linux/Docker
-LAYOUT_SERVICE_URL = os.getenv('LAYOUT_SERVICE_URL', 'http://localhost:8001')
+# Default uses Docker host gateway for separately run containers.
+LAYOUT_SERVICE_URL = os.getenv('LAYOUT_SERVICE_URL', 'http://host.docker.internal:8001')
 
 # Shared Volume Configuration
 # Path contract: All cross-service file paths use shared volume absolute paths
@@ -22,7 +23,7 @@ LAYOUT_READ_TIMEOUT = float(os.getenv('LAYOUT_READ_TIMEOUT', '30'))  # seconds
 LAYOUT_MAX_RETRIES = int(os.getenv('LAYOUT_MAX_RETRIES', '2'))  # number of retries
 
 # codex update: PaddleOCR service configuration (HTTP client)
-PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://localhost:8002')
+PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://host.docker.internal:8002')
 PADDLE_CONNECT_TIMEOUT = float(os.getenv('PADDLE_CONNECT_TIMEOUT', '5'))
 PADDLE_READ_TIMEOUT = float(os.getenv('PADDLE_READ_TIMEOUT', '60'))
 PADDLE_MAX_RETRIES = int(os.getenv('PADDLE_MAX_RETRIES', '2'))
@@ -94,10 +95,17 @@ GATE_OCR_PARAMS = dict(
 # codex update: OCR gate preprocessing (align with floorplan script)
 KW_STRIP_Y0_RATIO = 0.80
 KW_OCR_MAX_SIDE = 3840
-KW_OCR_MIN_UPSCALE = 2.0
+KW_OCR_MIN_UPSCALE = 1.0
 KW_OCR_MAX_UPSCALE = 4.0
 GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(OUTPUT_DIR, 'gate_preprocess'))
 GATE_KEEP_PREPROCESS = os.getenv('GATE_KEEP_PREPROCESS', 'false').lower() == 'true'
+
+# codex update: page-level visual prefilter for keyword gate
+GATE_USE_VISUAL_PREFILTER = os.getenv('GATE_USE_VISUAL_PREFILTER', 'true').lower() == 'true'
+GATE_VISUAL_HARD_REJECT = os.getenv('GATE_VISUAL_HARD_REJECT', 'true').lower() == 'true'
+GATE_VIS_MAX_SIDE = int(os.getenv('GATE_VIS_MAX_SIDE', '2000'))
+GATE_VIS_EDGE_DENSITY_MIN = float(os.getenv('GATE_VIS_EDGE_DENSITY_MIN', '0.010'))
+GATE_VIS_COLOR_MAX = float(os.getenv('GATE_VIS_COLOR_MAX', '0.30'))
 
 # codex update: PDF render settings
 RENDER_DPI = int(os.getenv("RENDER_DPI", "200"))

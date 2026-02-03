@@ -1,5 +1,15 @@
 """
-Page-level keyword gate for floorplan detection.
+Page-level floorplan gate (v2-style):
+- Step 1: native PDF text keyword hit (cheap) -> keep page, force_keep=False
+- Step 2: OCR on FULL PAGE (no strip) using paddle_ocr service -> strict phrase match -> keep page, force_keep=True
+- Step 3: Visual blueprint-like prefilter (edge density + color ratio) applied as a *secondary* filter
+          - bypassed when force_keep=True (mirrors "force_keep bypass blueprint filter" behavior)
+Returns:
+    (keep: bool, force_keep: bool, reason: str)
+
+Notes:
+- This module does NOT do layout-based candidate crops (PrimaLayout). Instead it applies the blueprint visual
+  filter at page-level, conservatively. This keeps the "spirit" of v2 while fitting the page-gate interface.
 """
 from __future__ import annotations
 
@@ -15,22 +25,30 @@ import config
 from ocr_service import paddle_ocr
 
 
+# ----------------------------
+# Text normalization & keywords
+# ----------------------------
+
 def _normalize_text(text: str) -> str:
-    # codex update: normalize OCR/native text for keyword matching
     text = (text or "").lower()
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
 def _keywords() -> List[str]:
+    # v2-style default: keep strict to avoid false positives
     return [kw.lower() for kw in getattr(config, "PAGE_KEYWORDS", ["floor plan", "floorplan"])]
 
 
 def native_text_has_kw(native_text: str) -> bool:
-    # codex update: check keyword hit in native PDF text
     normalized = _normalize_text(native_text)
-    return any(kw in normalized for kw in _keywords())
+    # same behavior as v2: strict floorplan/floor plan
+    return ("floorplan" in normalized) or ("floor plan" in normalized) or any(kw in normalized for kw in _keywords())
 
+
+# ----------------------------
+# Resize / preprocess helpers
+# ----------------------------
 
 def _resize_proportional(img_bgr: np.ndarray, limit: int) -> Tuple[np.ndarray, float]:
     h, w = img_bgr.shape[:2]
@@ -59,7 +77,6 @@ def _upscale_to_limit(
 
 
 def _preprocess_for_kw_ocr(img_bgr: np.ndarray, sharpen: bool = True) -> np.ndarray:
-    # codex update: align keyword OCR preprocessing with floorplan script
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray = clahe.apply(gray)
@@ -71,41 +88,46 @@ def _preprocess_for_kw_ocr(img_bgr: np.ndarray, sharpen: bool = True) -> np.ndar
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
 
-def _prepare_gate_image(image_path: str) -> Optional[str]:
-    # codex update: preprocess and save gate image for paddle-service
+def _prepare_gate_image_fullpage(image_path: str) -> Optional[str]:
+    """
+    v2-style: OCR on FULL PAGE (no strip).
+    Writes a preprocessed temp image for paddle-service OCR.
+    """
     img_bgr = cv2.imread(image_path)
     if img_bgr is None:
         return None
 
-    h, w = img_bgr.shape[:2]
-    strip_ratio = float(getattr(config, "KW_STRIP_Y0_RATIO", 0.80))
-    if 0 < strip_ratio < 1:
-        y0 = int(round(h * strip_ratio))
-        if y0 < h:
-            img_bgr = img_bgr[y0:h, :, :]
-
-    img_bgr, _ = _resize_proportional(img_bgr, limit=int(getattr(config, "KW_OCR_MAX_SIDE", 3840)))
+    # Resize + controlled upscale (mirrors your earlier behavior, but without strip)
+    max_side = int(getattr(config, "KW_OCR_MAX_SIDE", 3840))
+    img_bgr, _ = _resize_proportional(img_bgr, limit=max_side)
     img_bgr, _ = _upscale_to_limit(
         img_bgr,
-        max_side=int(getattr(config, "KW_OCR_MAX_SIDE", 3840)),
-        min_scale=float(getattr(config, "KW_OCR_MIN_UPSCALE", 2.0)),
+        max_side=max_side,
+        min_scale=float(getattr(config, "KW_OCR_MIN_UPSCALE", 1.0)),
         max_scale=float(getattr(config, "KW_OCR_MAX_UPSCALE", 4.0)),
     )
     img_bgr = _preprocess_for_kw_ocr(img_bgr, sharpen=True)
 
     out_dir = getattr(config, "GATE_PREPROCESS_DIR", os.path.join("output", "gate_preprocess"))
     os.makedirs(out_dir, exist_ok=True)
-    out_name = f"gate_{uuid.uuid4().hex}.png"
+    out_name = f"gate_full_{uuid.uuid4().hex}.png"
     out_path = os.path.join(out_dir, out_name)
     cv2.imwrite(out_path, img_bgr)
     return out_path
 
 
+# ----------------------------
+# OCR item normalization
+# ----------------------------
+
 def _ocr_items_from_service(image_path: str) -> List[Dict[str, float]]:
-    # codex update: normalize paddle-service output into text items
+    """
+    Normalize paddle-service output into items:
+      {"text": str, "bbox":[x0,y0,x1,y1], "h":float, "cx":float, "cy":float}
+    """
     blocks = paddle_ocr(image_path)
     items: List[Dict[str, float]] = []
-    for block in blocks:
+    for block in blocks or []:
         text = _normalize_text(block.get("text", ""))
         if not text:
             continue
@@ -125,29 +147,32 @@ def _kw_match_floor_plan(
     line_y_tol: float = 0.6,
     gap_char_factor: float = 1.2,
 ) -> bool:
-    # codex update: strict phrase matching aligned with floorplan script
+    """
+    Strict phrase match (v2):
+    - strong hit if any single item contains "floorplan" or "floor plan"
+    - else: require "floor" and "plan" in nearby boxes (same line-ish, similar height, small gap)
+    """
     if not items:
         return False
 
     for item in items:
-        text = item["text"]
-        if "floorplan" in text:
+        t = item["text"]
+        if "floorplan" in t:
             return True
-        if "floor plan" in text:
+        if "floor plan" in t:
             return True
 
-    floors = [item for item in items if re.search(r"\bfloor\b", item["text"])]
-    plans = [item for item in items if re.search(r"\bplan\b", item["text"])]
-
+    floors = [it for it in items if re.search(r"\bfloor\b", it["text"])]
+    plans = [it for it in items if re.search(r"\bplan\b", it["text"])]
     if not floors or not plans:
         return False
 
-    for floor_item in floors:
-        fx0, _, fx1, _ = floor_item["bbox"]
-        fh, fcy = floor_item["h"], floor_item["cy"]
-        for plan_item in plans:
-            px0, _, _, _ = plan_item["bbox"]
-            ph, pcy = plan_item["h"], plan_item["cy"]
+    for f in floors:
+        fx0, _, fx1, _ = f["bbox"]
+        fh, fcy = f["h"], f["cy"]
+        for p in plans:
+            px0, _, _, _ = p["bbox"]
+            ph, pcy = p["h"], p["cy"]
 
             mh = max(fh, ph)
             if abs(fh - ph) / (mh + 1e-6) > height_rel_tol:
@@ -160,29 +185,130 @@ def _kw_match_floor_plan(
             gap = px0 - fx1
             if gap <= gap_char_factor * mh:
                 return True
+
     return False
 
+
+# ----------------------------
+# Visual blueprint-like prefilter (page-level)
+# ----------------------------
+
+def _edge_density(img_bgr: np.ndarray) -> float:
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    return float(np.mean(edges > 0))
+
+
+def _color_ratio(img_bgr: np.ndarray) -> float:
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    _, s, v = cv2.split(hsv)
+    mask = (s > 25) & (v > 25)
+    denom = float(img_bgr.shape[0] * img_bgr.shape[1] + 1e-6)
+    return float(np.count_nonzero(mask) / denom)
+
+
+def _is_blueprint_like_page(img_bgr: np.ndarray) -> Tuple[bool, Dict[str, float]]:
+    """
+    Conservative page-level blueprint filter to approximate v2 crop filter.
+    Bypassed by force_keep=True.
+
+    Thresholds (configurable):
+      - GATE_VIS_EDGE_DENSITY_MIN (default 0.010)
+      - GATE_VIS_COLOR_MAX (default 0.30)
+      - GATE_VIS_MAX_SIDE (default 2000) for feature computation downscale
+    """
+    max_side = int(getattr(config, "GATE_VIS_MAX_SIDE", 2000))
+    small, _ = _resize_proportional(img_bgr, limit=max_side)
+
+    ed = _edge_density(small)
+    cr = _color_ratio(small)
+
+    feats = {"page_edge_density": float(ed), "page_color_ratio": float(cr)}
+
+    ed_min = float(getattr(config, "GATE_VIS_EDGE_DENSITY_MIN", 0.010))
+    cr_max = float(getattr(config, "GATE_VIS_COLOR_MAX", 0.30))
+
+    if cr > cr_max:
+        return False, feats
+    if ed < ed_min:
+        return False, feats
+    return True, feats
+
+
+# ----------------------------
+# Public API
+# ----------------------------
 
 def page_has_floorplan_keyword(
     image_path: str,
     native_text_blocks: Optional[List[Dict[str, Any]]],
 ) -> Tuple[bool, bool, str]:
-    # codex update: page-level keyword gate using native text then OCR
-    native_text = " ".join(block.get("text", "") for block in (native_text_blocks or []))
+    """
+    Returns:
+      keep: bool         - should keep this page for downstream heavy inference
+      force_keep: bool   - True only when STRICT OCR phrase match succeeds (v2 behavior)
+      reason: str        - one of:
+          "native_text"
+          "ocr_force_keep"
+          "ocr_miss"
+          "visual_reject"
+          "image_load_failed"
+          "native_text_miss_ocr_disabled"
+          "ocr_error"
+    """
+    # ---- Step 1: native text gate ----
+    native_text = " ".join((b.get("text", "") for b in (native_text_blocks or [])))
     if native_text_has_kw(native_text):
-        return True, False, "native_text"
+        keep = True
+        force_keep = False  # v2: native hit does NOT imply force_keep
+        reason = "native_text"
 
+        # Optional: apply visual prefilter even on native hit (bypass only if force_keep)
+        if getattr(config, "GATE_USE_VISUAL_PREFILTER", True):
+            img_bgr = cv2.imread(image_path)
+            if img_bgr is None:
+                return True, False, "native_text"  # don't block if image unavailable
+            ok_vis, _ = _is_blueprint_like_page(img_bgr)
+            if not ok_vis:
+                if getattr(config, "GATE_VISUAL_HARD_REJECT", True):
+                    return False, False, "visual_reject"
+        return keep, force_keep, reason
+
+    # ---- Step 2: OCR gate (full page, no strip) ----
     if not getattr(config, "GATE_USE_OCR", True):
-        return False, False, "native_text_miss"
+        return False, False, "native_text_miss_ocr_disabled"
 
-    preprocessed_path = _prepare_gate_image(image_path)
-    if preprocessed_path is None:
+    prep_path = _prepare_gate_image_fullpage(image_path)
+    if prep_path is None:
         return False, False, "image_load_failed"
-    items = _ocr_items_from_service(preprocessed_path)
+
+    try:
+        items = _ocr_items_from_service(prep_path)
+    except Exception:
+        items = []
+        hit = False
+        force_keep = False
+        reason = "ocr_error"
+    else:
+        hit = _kw_match_floor_plan(items)
+        force_keep = bool(hit)
+        reason = "ocr_force_keep" if force_keep else "ocr_miss"
+
     if not getattr(config, "GATE_KEEP_PREPROCESS", False):
         try:
-            os.remove(preprocessed_path)
+            os.remove(prep_path)
         except OSError:
             pass
-    hit = _kw_match_floor_plan(items)
-    return hit, hit, "ocr"
+
+    if not hit:
+        return False, False, reason
+
+    # ---- Step 3: Visual blueprint prefilter (bypassed if force_keep=True) ----
+    if getattr(config, "GATE_USE_VISUAL_PREFILTER", True) and not force_keep:
+        img_bgr = cv2.imread(image_path)
+        if img_bgr is not None:
+            ok_vis, _ = _is_blueprint_like_page(img_bgr)
+            if not ok_vis and getattr(config, "GATE_VISUAL_HARD_REJECT", True):
+                return False, False, "visual_reject"
+
+    return True, force_keep, reason

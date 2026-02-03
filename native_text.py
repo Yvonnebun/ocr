@@ -112,4 +112,3 @@ def filter_text_excluding_images(text_blocks: List[Dict],
         Filtered text blocks
     """
     return utils.filter_text_by_regions(text_blocks, image_regions, threshold=0.5)
-
