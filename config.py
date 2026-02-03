@@ -10,7 +10,10 @@ RENDER_DIR = os.path.join(OUTPUT_DIR, "renders")
 
 # Layout Service Configuration (HTTP client)
 # Layout detection is done via HTTP call to layout-service running in Linux/Docker
-LAYOUT_SERVICE_URL = os.getenv('LAYOUT_SERVICE_URL', 'http://layout-service:8001')
+
+# Default uses Docker host gateway for separately run containers.
+LAYOUT_SERVICE_URL = os.getenv('LAYOUT_SERVICE_URL', 'http://host.docker.internal:8001')
+
 
 # Shared Volume Configuration
 # Path contract: All cross-service file paths use shared volume absolute paths
@@ -22,7 +25,9 @@ LAYOUT_READ_TIMEOUT = float(os.getenv('LAYOUT_READ_TIMEOUT', '30'))  # seconds
 LAYOUT_MAX_RETRIES = int(os.getenv('LAYOUT_MAX_RETRIES', '2'))  # number of retries
 
 # codex update: PaddleOCR service configuration (HTTP client)
-PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://paddle-service:8002')
+
+PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://host.docker.internal:8002')
+
 PADDLE_CONNECT_TIMEOUT = float(os.getenv('PADDLE_CONNECT_TIMEOUT', '5'))
 PADDLE_READ_TIMEOUT = float(os.getenv('PADDLE_READ_TIMEOUT', '60'))
 PADDLE_MAX_RETRIES = int(os.getenv('PADDLE_MAX_RETRIES', '2'))
