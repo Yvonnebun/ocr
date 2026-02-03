@@ -211,7 +211,11 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
 
                 # Step 5.5: Inference service (polygons) on extracted images
                 print(f"  Step 5.5: Running inference service...")
+                inference_available = True
+                inference_error = None
                 for extracted in extracted_images:
+                    if not inference_available:
+                        break
                     image_path_out = extracted.get("image_path")
                     if not image_path_out:
                         continue
@@ -225,6 +229,17 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         )
                     except Exception as e:
                         print(f"    WARNING in Step 5.5 (Inference Service): {e}")
+                        inference_error = str(e)
+                        extracted["inference_error"] = inference_error
+                        if "Cannot connect to inference service" in inference_error:
+                            inference_available = False
+                            if run_logger:
+                                run_logger.log_event(
+                                    "inference_unavailable",
+                                    {"page_idx": page_idx, "error": inference_error},
+                                )
+                if inference_error:
+                    page_result["flags"]["inference_error"] = inference_error
 
                 # Step 5.6: Door detection gate (after crop & merge)
                 print(f"  Step 5.6: Detecting doors...")
