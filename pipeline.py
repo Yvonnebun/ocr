@@ -153,33 +153,6 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 figure_blocks = filter_figure_blocks(layout_blocks)
                 print(f"    Found {len(figure_blocks)} figure candidates")
 
-                # Step 3.5: Door detection gate
-                print(f"  Step 3.5: Detecting doors...")
-                try:
-                    door_count, door_stats = detect_door_count(image_path)
-                    page_result["door_count"] = door_count
-                    if run_logger:
-                        run_logger.log_event(
-                            "door_detect",
-                            {"page_idx": page_idx, "door_count": door_count, **door_stats},
-                        )
-                except Exception as e:
-                    print(f"    WARNING in Step 3.5 (Door Detect): {e}")
-                    traceback.print_exc()
-                    door_count = 0
-                    page_result["door_count"] = door_count
-
-                if door_count < config.DOOR_MIN_COUNT:
-                    print(f"  Page {page_idx + 1} skipped by door gate (door_count={door_count})")
-                    result["rejected_pages"].append(page_idx)
-                    result["pages"].append(page_result)
-                    if run_logger:
-                        run_logger.log_event(
-                            "page_skipped",
-                            {"page_idx": page_idx, "reason": "door_gate", "door_count": door_count},
-                        )
-                    continue
-
                 # Step 4: Region Refiner (removed)
                 # codex update: skip region_refiner entirely; use preprocessed candidates directly
                 if figure_blocks:
@@ -234,6 +207,46 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     print(f"    WARNING in Step 5 (Image Extraction): {e}")
                     traceback.print_exc()
                     extracted_images = []
+
+                # Step 5.5: Door detection gate (after crop & merge)
+                print(f"  Step 5.5: Detecting doors...")
+                try:
+                    door_count = 0
+                    door_stats: Dict[str, float] = {}
+                    for extracted in extracted_images:
+                        crop_path = extracted.get("image_path")
+                        if not crop_path:
+                            continue
+                        crop_count, crop_stats = detect_door_count(crop_path)
+                        door_count += crop_count
+                        door_stats = crop_stats
+                    page_result["door_count"] = door_count
+                    if run_logger:
+                        run_logger.log_event(
+                            "door_detect",
+                            {
+                                "page_idx": page_idx,
+                                "door_count": door_count,
+                                "crop_count": float(len(extracted_images)),
+                                **door_stats,
+                            },
+                        )
+                except Exception as e:
+                    print(f"    WARNING in Step 5.5 (Door Detect): {e}")
+                    traceback.print_exc()
+                    door_count = 0
+                    page_result["door_count"] = door_count
+
+                if door_count < config.DOOR_MIN_COUNT:
+                    print(f"  Page {page_idx + 1} skipped by door gate (door_count={door_count})")
+                    result["rejected_pages"].append(page_idx)
+                    result["pages"].append(page_result)
+                    if run_logger:
+                        run_logger.log_event(
+                            "page_skipped",
+                            {"page_idx": page_idx, "reason": "door_gate", "door_count": door_count},
+                        )
+                    continue
                 
                 # Step 6: Image OCR
                 print(f"  Step 6: Running OCR on images...")
