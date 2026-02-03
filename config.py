@@ -100,9 +100,8 @@ KW_OCR_MAX_UPSCALE = 4.0
 GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(OUTPUT_DIR, 'gate_preprocess'))
 GATE_KEEP_PREPROCESS = os.getenv('GATE_KEEP_PREPROCESS', 'false').lower() == 'true'
 
-# codex update: page-level visual prefilter for keyword gate
-GATE_USE_VISUAL_PREFILTER = os.getenv('GATE_USE_VISUAL_PREFILTER', 'true').lower() == 'true'
-GATE_VISUAL_HARD_REJECT = os.getenv('GATE_VISUAL_HARD_REJECT', 'true').lower() == 'true'
+# codex update: page-level visual fallback for keyword gate
+GATE_USE_VISUAL_FALLBACK = os.getenv('GATE_USE_VISUAL_FALLBACK', 'true').lower() == 'true'
 GATE_VIS_MAX_SIDE = int(os.getenv('GATE_VIS_MAX_SIDE', '2000'))
 GATE_VIS_EDGE_DENSITY_MIN = float(os.getenv('GATE_VIS_EDGE_DENSITY_MIN', '0.010'))
 GATE_VIS_COLOR_MAX = float(os.getenv('GATE_VIS_COLOR_MAX', '0.30'))
