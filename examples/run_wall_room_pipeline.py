@@ -12,12 +12,11 @@ from inference.pipeline_floorplan import FloorplanPipelinePredictor
 
 
 def main() -> None:
-    image_path = "path/to/image.png"
-    wall_a_weights = "path/to/wall_a.pt"
-    wall_b_weights = "path/to/wall_b.pt"
-    room_weights = "path/to/room.pt"
-    window_weights = "path/to/window.pt"
-
+    image_path = "/app/test.png"
+    wall_a_weights = "/app/teacher2_wall_mixed.pt"
+    wall_b_weights = "/app/teacher2_wall_mixed.pt"
+    room_weights = "/app/baseline.pt"
+    window_weights = "/app/baseline.pt"
     image_bgr = cv2.imread(image_path)
     if image_bgr is None:
         raise FileNotFoundError(f"Image not found: {image_path}")

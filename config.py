@@ -82,7 +82,7 @@ OCR_INVERT_WHITE_RATIO_THRESHOLD = 0.5
 MIN_REGION_SIDE_PX = 0
 
 # codex update: page keyword gate config (floorplan detector)
-PAGE_KEYWORDS = ["floor plan", "floorplan"]
+PAGE_KEYWORDS = ["floor plan", "floorplan","floor plans","development plan","site plan","main floor"]
 PAGE_KEYWORD_LANG = "en"
 GATE_USE_OCR = True
 GATE_MAX_SIDE = 3840
@@ -119,7 +119,7 @@ DOOR_MODEL_PATH = os.getenv("DOOR_MODEL_PATH", "")
 DOOR_CONF_THRESHOLD = float(os.getenv("DOOR_CONF_THRESHOLD", "0.25"))
 DOOR_IOU_THRESHOLD = float(os.getenv("DOOR_IOU_THRESHOLD", "0.45"))
 DOOR_CLASS_NAMES = [name.strip().lower() for name in os.getenv("DOOR_CLASS_NAMES", "door").split(",") if name.strip()]
-DOOR_MIN_COUNT = int(os.getenv("DOOR_MIN_COUNT", "2"))
+DOOR_MIN_COUNT = int(os.getenv("DOOR_MIN_COUNT", "1"))
 
 # codex update: candidate padding expansion
 CANDIDATE_PAD_RATIO = float(os.getenv("CANDIDATE_PAD_RATIO", "0.2"))
@@ -132,6 +132,7 @@ TABLE_KEYWORDS = [
     "square",
     "floor area's (sq.ft.)",
     "sq.ft.",
+    "square footage"
 ]
 
 # codex update: test output root (ensure shared volume visibility)
@@ -142,4 +143,4 @@ CANDIDATE_MIN_W = 12
 CANDIDATE_MIN_H = 12
 CANDIDATE_OVERLAP_TH = 0.30
 CANDIDATE_MIN_AREA_RATIO = 0.2
-SIDEBAR_PARAMS = dict(side_margin_ratio=0.12, min_height_ratio=0.55, max_width_ratio=0.22)
+SIDEBAR_PARAMS = dict(side_margin_ratio=0.12, min_height_ratio=0.75, max_width_ratio=0.22)
