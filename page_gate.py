@@ -23,7 +23,7 @@ def _normalize_text(text: str) -> str:
 
 
 def _keywords() -> List[str]:
-    return [kw.lower() for kw in getattr(config, "PAGE_KEYWORDS", ["floor plan", "floorplan"])]
+    return [kw.lower() for kw in getattr(config, "PAGE_KEYWORDS", ["floor plan", "floorplan","floor plans","development plan","site plan","main floor"])]
 
 
 def native_text_has_kw(native_text: str) -> bool:
