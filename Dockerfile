@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 ENV INFERENCE_WALL_A_WEIGHTS=/app/models/wall_a.pt \
     INFERENCE_WALL_B_WEIGHTS=/app/models/wall_b.pt \
     INFERENCE_ROOM_WEIGHTS=/app/models/room.pt \
-    INFERENCE_WINDOW_WEIGHTS=/app/models/window.pt
+    INFERENCE_WINDOW_WEIGHTS=/app/models/window.pt \
+    DOOR_MODEL_PATH=/app/models/door.pt
 
 COPY . /app
