@@ -103,11 +103,7 @@ def _prepare_gate_image(image_path: str) -> Optional[str]:
 
 def _ocr_items_from_service(image_path: str) -> List[Dict[str, float]]:
     # codex update: normalize paddle-service output into text items
-    try:
-        blocks = paddle_ocr(image_path)
-    except Exception as exc:
-        print(f"    WARNING in gate OCR service: {exc}")
-        return []
+    blocks = paddle_ocr(image_path)
     items: List[Dict[str, float]] = []
     for block in blocks:
         text = _normalize_text(block.get("text", ""))

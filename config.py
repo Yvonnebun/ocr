@@ -101,7 +101,7 @@ KW_STRIP_Y0_RATIO = 0.80
 KW_OCR_MAX_SIDE = 3840
 KW_OCR_MIN_UPSCALE = 2.0
 KW_OCR_MAX_UPSCALE = 4.0
-GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(OUTPUT_DIR, 'gate_preprocess'))
+GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(SHARED_VOLUME_ROOT, 'gate_preprocess'))
 GATE_KEEP_PREPROCESS = os.getenv('GATE_KEEP_PREPROCESS', 'false').lower() == 'true'
 
 # codex update: PDF render settings
