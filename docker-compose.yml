@@ -3,6 +3,13 @@ services:
     build: ./layout_service
     ports:
       - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ${HOST_SHARED_DATA:-./shared_data}:/app/shared_data
       - ./layout_service/models:/app/models:ro
@@ -15,6 +22,13 @@ services:
     build: ./paddle_service
     ports:
       - "8002:8002"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ${HOST_SHARED_DATA:-./shared_data}:/app/shared_data
     environment:
@@ -22,7 +36,6 @@ services:
 
   ocr-pipeline:
     build: .
-    runtime: nvidia
     depends_on:
       - layout-service
       - paddle-service
