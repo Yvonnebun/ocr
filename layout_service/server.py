@@ -17,6 +17,9 @@ import traceback
 app = Flask(__name__)
 CORS(app)  # Enable CORS for cross-origin requests
 
+# Shared volume root for image paths
+SHARED_VOLUME_ROOT = os.getenv("SHARED_VOLUME_ROOT", "/app/shared_data")
+
 # Global model singleton
 _layout_model = None
 
@@ -106,6 +109,24 @@ def get_layout_model():
     return _layout_model
 
 
+def _resolve_shared_path(path: str) -> str:
+    if not path:
+        raise ValueError("Empty image path")
+    if os.path.isabs(path):
+        if not path.startswith(SHARED_VOLUME_ROOT.rstrip("/") + "/"):
+            raise ValueError(f"Image path must be under {SHARED_VOLUME_ROOT}: {path}")
+        return path
+    return os.path.join(SHARED_VOLUME_ROOT, path.lstrip("/"))
+
+
+def _list_dir(path: str, limit: int = 25) -> List[str]:
+    try:
+        entries = os.listdir(path)
+    except OSError:
+        return []
+    return sorted(entries)[:limit]
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
@@ -155,11 +176,19 @@ def predict():
         image_path = data.get('image_path')
         if not image_path:
             return jsonify({"error": "Missing 'image_path' in request"}), 400
+
+        try:
+            image_path = _resolve_shared_path(image_path)
+        except ValueError as e:
+            return jsonify({"error": str(e), "shared_root": SHARED_VOLUME_ROOT}), 400
         
         # Check if file exists
         if not os.path.exists(image_path):
+            parent_dir = os.path.dirname(image_path)
             return jsonify({
-                "error": f"Image file not found: {image_path}"
+                "error": f"Image file not found: {image_path}",
+                "shared_root": SHARED_VOLUME_ROOT,
+                "dir_listing": _list_dir(parent_dir),
             }), 404
         
         # Load image

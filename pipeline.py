@@ -5,6 +5,7 @@ import os
 import json
 import sys
 import traceback
+import time
 from typing import Dict, List, Optional
 import cv2
 import config
@@ -46,9 +47,32 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
         run_logger.log_event("run_start", {"pdf_path": pdf_path, "output_dir": output_dir})
         
         print(f"Output directory: {output_dir}")
+        print(f"Shared volume root: {config.SHARED_VOLUME_ROOT}")
+        print(f"Render dir: {config.RENDER_DIR}")
+        print(f"Gate preprocess dir: {config.GATE_PREPROCESS_DIR}")
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(config.IMAGE_DIR, exist_ok=True)
         os.makedirs(config.RENDER_DIR, exist_ok=True)
+        os.makedirs(config.GATE_PREPROCESS_DIR, exist_ok=True)
+        print(
+            "Shared dir contents:",
+            os.path.exists(config.SHARED_VOLUME_ROOT),
+            sorted(os.listdir(config.SHARED_VOLUME_ROOT))[:25]
+            if os.path.exists(config.SHARED_VOLUME_ROOT)
+            else [],
+        )
+        print(
+            "Render dir contents:",
+            os.path.exists(config.RENDER_DIR),
+            sorted(os.listdir(config.RENDER_DIR))[:25] if os.path.exists(config.RENDER_DIR) else [],
+        )
+        print(
+            "Gate preprocess contents:",
+            os.path.exists(config.GATE_PREPROCESS_DIR),
+            sorted(os.listdir(config.GATE_PREPROCESS_DIR))[:25]
+            if os.path.exists(config.GATE_PREPROCESS_DIR)
+            else [],
+        )
         
         # Step 1: Page Render
         print("Step 1: Rendering PDF pages...")
@@ -473,6 +497,10 @@ if __name__ == "__main__":
     try:
         result = process_pdf(pdf_path, output_dir)
         save_result(result)
+        if os.getenv("KEEP_ALIVE", "0").lower() in {"1", "true", "yes"}:
+            print("KEEP_ALIVE enabled; blocking to keep container alive.")
+            while True:
+                time.sleep(3600)
     except Exception as e:
         print(f"\nFATAL ERROR: {e}")
         traceback.print_exc()

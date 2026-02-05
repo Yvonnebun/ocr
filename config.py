@@ -6,7 +6,7 @@ import os
 # Paths
 OUTPUT_DIR = "output"
 IMAGE_DIR = os.path.join(OUTPUT_DIR, "images")
-RENDER_DIR = os.path.join(OUTPUT_DIR, "renders")
+RENDER_DIR = os.getenv("RENDER_DIR", os.path.join(OUTPUT_DIR, "renders"))
 
 # Layout Service Configuration (HTTP client)
 # Layout detection is done via HTTP call to layout-service running in Linux/Docker
