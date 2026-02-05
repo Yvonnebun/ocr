@@ -73,9 +73,17 @@ def get_layout_model():
             config_path = os.getenv("PRIMA_CONFIG", "/app/models/prima/config.yaml")
             model_path = os.getenv("PRIMA_WEIGHTS", "/app/models/prima/model_final.pth")
             if not os.path.exists(config_path):
-                raise FileNotFoundError(f"Prima config not found: {config_path}")
+                raise FileNotFoundError(
+                    f"Prima config not found: {config_path}. "
+                    "Ensure ./layout_service/models/prima/config.yaml is present "
+                    "or mount /app/models via docker compose."
+                )
             if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Prima weights not found: {model_path}")
+                raise FileNotFoundError(
+                    f"Prima weights not found: {model_path}. "
+                    "Ensure ./layout_service/models/prima/model_final.pth is present "
+                    "or mount /app/models via docker compose."
+                )
             return lp.Detectron2LayoutModel(
                 config_path,
                 model_path,
