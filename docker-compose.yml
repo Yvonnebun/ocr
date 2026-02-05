@@ -34,6 +34,7 @@ services:
       - LAYOUT_SERVICE_URL=http://layout-service:8001
       - PADDLE_SERVICE_URL=http://paddle-service:8002
       - GATE_PREPROCESS_DIR=/app/shared_data/gate_preprocess
+      - OUTPUT_DIR=/app/shared_data
     volumes:
       - ./shared_data:/app/shared_data
       - ./models:/app/models
