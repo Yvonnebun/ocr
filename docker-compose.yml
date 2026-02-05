@@ -22,6 +22,9 @@ services:
 
   ocr-pipeline:
     build: .
+    depends_on:
+      - layout-service
+      - paddle-service
     deploy:
       resources:
         reservations:
