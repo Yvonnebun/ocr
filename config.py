@@ -6,7 +6,7 @@ import os
 # Paths
 OUTPUT_DIR = "output"
 IMAGE_DIR = os.path.join(OUTPUT_DIR, "images")
-RENDER_DIR = os.path.join(OUTPUT_DIR, "renders")
+RENDER_DIR = os.getenv("RENDER_DIR", os.path.join(OUTPUT_DIR, "renders"))
 
 # Layout Service Configuration (HTTP client)
 # Layout detection is done via HTTP call to layout-service running in Linux/Docker
@@ -144,3 +144,15 @@ CANDIDATE_MIN_H = 12
 CANDIDATE_OVERLAP_TH = 0.30
 CANDIDATE_MIN_AREA_RATIO = 0.2
 SIDEBAR_PARAMS = dict(side_margin_ratio=0.12, min_height_ratio=0.75, max_width_ratio=0.22)
+
+# codex update: floorplan inference & extension
+FLOORPLAN_INFERENCE_ENABLED = os.getenv("FLOORPLAN_INFERENCE_ENABLED", "false").lower() == "true"
+FLOORPLAN_WALL_A_WEIGHTS = os.getenv("FLOORPLAN_WALL_A_WEIGHTS", "")
+FLOORPLAN_WALL_B_WEIGHTS = os.getenv("FLOORPLAN_WALL_B_WEIGHTS", "")
+FLOORPLAN_ROOM_WEIGHTS = os.getenv("FLOORPLAN_ROOM_WEIGHTS", "")
+FLOORPLAN_WINDOW_WEIGHTS = os.getenv("FLOORPLAN_WINDOW_WEIGHTS", "")
+FLOORPLAN_DEVICE = os.getenv("FLOORPLAN_DEVICE", "auto")
+FLOORPLAN_IMGSZ = int(os.getenv("FLOORPLAN_IMGSZ", "1024"))
+FLOORPLAN_HALF = os.getenv("FLOORPLAN_HALF", "true").lower() == "true"
+FLOORPLAN_EXTEND_RATIO = float(os.getenv("FLOORPLAN_EXTEND_RATIO", "0.2"))
+EXTENDED_IMAGE_DIR = os.getenv("EXTENDED_IMAGE_DIR", os.path.join(OUTPUT_DIR, "extended_images"))

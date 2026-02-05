@@ -1,0 +1,46 @@
+services:
+  layout-service:
+    build: ./layout_service
+    ports:
+      - "8001:8001"
+    volumes:
+      - ${HOST_SHARED_DATA:-./shared_data}:/app/shared_data
+      - ./layout_service/models:/app/models:ro
+    environment:
+      - PRIMA_CONFIG=/app/models/prima/config.yaml
+      - PRIMA_WEIGHTS=/app/models/prima/model_final.pth
+      - SHARED_VOLUME_ROOT=/app/shared_data
+
+  paddle-service:
+    build: ./paddle_service
+    ports:
+      - "8002:8002"
+    volumes:
+      - ${HOST_SHARED_DATA:-./shared_data}:/app/shared_data
+    environment:
+      - SHARED_VOLUME_ROOT=/app/shared_data
+
+  ocr-pipeline:
+    build: .
+    depends_on:
+      - layout-service
+      - paddle-service
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - LAYOUT_SERVICE_URL=http://layout-service:8001
+      - PADDLE_SERVICE_URL=http://paddle-service:8002
+      - SHARED_VOLUME_ROOT=/app/shared_data
+      - RENDER_DIR=/app/shared_data/renders
+      - GATE_PREPROCESS_DIR=/app/shared_data/gate_preprocess
+      - OUTPUT_DIR=/app/shared_data
+      - KEEP_ALIVE=${KEEP_ALIVE:-0}
+    volumes:
+      - ${HOST_SHARED_DATA:-./shared_data}:/app/shared_data
+      - ./models:/app/models

@@ -155,3 +155,77 @@ def extract_image_assets(
             },
         )
     return extracted_images
+
+
+def extend_image_assets(
+    image_path: str,
+    extracted_images: List[Dict],
+    output_dir: str,
+    page_idx: int,
+    pad_ratio: float = 0.2,
+) -> List[Dict]:
+    """
+    Extend extracted image crops by a padding ratio and re-crop from the page image.
+
+    Args:
+        image_path: Path to full page image
+        extracted_images: List of dicts with 'bbox_px'
+        output_dir: Directory to save extended images
+        page_idx: Page index for naming
+        pad_ratio: Padding ratio based on crop width/height
+
+    Returns:
+        List of dicts with:
+        {
+            'image_path': str,
+            'bbox_px': [x0, y0, x1, y1],
+            'extended_bbox_px': [x0, y0, x1, y1],
+            'source_index': int,
+            'source_image_path': str,
+        }
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    if not extracted_images:
+        return []
+
+    img = Image.open(image_path)
+    width, height = img.size
+
+    extended_images = []
+    for idx, img_info in enumerate(extracted_images):
+        bbox = img_info.get("bbox_px") or []
+        if len(bbox) < 4:
+            continue
+        x0, y0, x1, y1 = [int(coord) for coord in bbox]
+        crop_w = max(0, x1 - x0)
+        crop_h = max(0, y1 - y0)
+        if crop_w <= 0 or crop_h <= 0:
+            continue
+
+        pad_x = int(round(pad_ratio * crop_w))
+        pad_y = int(round(pad_ratio * crop_h))
+        x0e = max(0, x0 - pad_x)
+        y0e = max(0, y0 - pad_y)
+        x1e = min(width, x1 + pad_x)
+        y1e = min(height, y1 + pad_y)
+        if x1e <= x0e or y1e <= y0e:
+            continue
+
+        cropped = img.crop((x0e, y0e, x1e, y1e))
+        image_filename = f"page_{page_idx:04d}_image_{idx:04d}_extended.png"
+        image_path_out = os.path.join(output_dir, image_filename)
+        cropped.save(image_path_out, "PNG")
+
+        extended_images.append(
+            {
+                "image_path": image_path_out,
+                "bbox_px": bbox,
+                "extended_bbox_px": [x0e, y0e, x1e, y1e],
+                "image_size": [cropped.size[0], cropped.size[1]],
+                "source_index": idx,
+                "source_image_path": img_info.get("image_path"),
+            }
+        )
+
+    return extended_images
