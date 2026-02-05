@@ -71,10 +71,13 @@ def get_layout_model():
     global _layout_model
     if _layout_model is None:
         def _load_model() -> lp.Detectron2LayoutModel:
+            config_path = "lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/config"
+            model_path = "lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/model"
             return lp.Detectron2LayoutModel(
-                'lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/config',
-                extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.3],
+                config_path,
+                model_path,
                 label_map={1:"Text", 2:"Image", 3:"Table", 4:"Maths", 5:"Separator", 6:"Other"},
+                extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.5],
             )
 
         try:
