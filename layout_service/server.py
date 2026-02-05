@@ -5,7 +5,6 @@ This service runs in Linux/Docker environment where detectron2 is available.
 """
 import os
 import sys
-import shutil
 import yaml
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -71,8 +70,12 @@ def get_layout_model():
     global _layout_model
     if _layout_model is None:
         def _load_model() -> lp.Detectron2LayoutModel:
-            config_path = "lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/config"
-            model_path = "lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/model"
+            config_path = os.getenv("PRIMA_CONFIG", "/app/models/prima/config.yaml")
+            model_path = os.getenv("PRIMA_WEIGHTS", "/app/models/prima/model_final.pth")
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(f"Prima config not found: {config_path}")
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(f"Prima weights not found: {model_path}")
             return lp.Detectron2LayoutModel(
                 config_path,
                 model_path,
@@ -85,17 +88,9 @@ def get_layout_model():
             _layout_model = _load_model()
             print("Layout model loaded successfully")
         except yaml.scanner.ScannerError as e:
-            print(f"WARNING: Layout model config parse failed: {e}")
-            cache_dir = os.path.expanduser("~/.torch/iopath_cache")
-            print(f"Clearing iopath cache: {cache_dir}")
-            shutil.rmtree(cache_dir, ignore_errors=True)
-            try:
-                _layout_model = _load_model()
-                print("Layout model loaded successfully after cache clear")
-            except Exception as inner_exc:
-                print(f"ERROR: Failed to load layout model after cache clear: {inner_exc}")
-                traceback.print_exc()
-                raise
+            print(f"ERROR: Layout model config parse failed: {e}")
+            traceback.print_exc()
+            raise
         except Exception as e:
             print(f"ERROR: Failed to load layout model: {e}")
             traceback.print_exc()

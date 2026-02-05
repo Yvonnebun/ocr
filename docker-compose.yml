@@ -6,6 +6,10 @@ services:
       - "8001:8001"
     volumes:
       - ./shared_data:/app/shared_data
+      - ./layout_service/models:/app/models:ro
+    environment:
+      - PRIMA_CONFIG=/app/models/prima/config.yaml
+      - PRIMA_WEIGHTS=/app/models/prima/model_final.pth
 
   paddle-service:
     build: ./paddle_service

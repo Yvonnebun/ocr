@@ -16,6 +16,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install -r requirements.txt
 
+ENV PRIMA_CONFIG=/app/models/prima/config.yaml
+ENV PRIMA_WEIGHTS=/app/models/prima/model_final.pth
+
 # Detectron2: official prebuilt wheel (Linux only)
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -c "import torch; print('torch=', torch.__version__, 'cuda=', torch.version.cuda)" && \
@@ -26,4 +29,3 @@ COPY . .
 
 EXPOSE 8001
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
-
