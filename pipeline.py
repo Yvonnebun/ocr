@@ -5,12 +5,13 @@ import os
 import json
 import sys
 import traceback
-from typing import Dict, List
+from typing import Dict, List, Optional
+import cv2
 import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
 from door_detect import detect_door_count
-from image_extraction import extract_image_assets
+from image_extraction import extract_image_assets, extend_image_assets
 from image_ocr import ocr_all_images
 from native_text import extract_native_text, filter_text_excluding_images
 from scanned_page import ocr_non_image_regions
@@ -73,6 +74,14 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
         }
         
         all_text_content = []
+        floorplan_predictor: Optional["FloorplanPipelinePredictor"] = None
+        floorplan_enabled = bool(
+            getattr(config, "FLOORPLAN_INFERENCE_ENABLED", False)
+            and getattr(config, "FLOORPLAN_WALL_A_WEIGHTS", "")
+            and getattr(config, "FLOORPLAN_WALL_B_WEIGHTS", "")
+            and getattr(config, "FLOORPLAN_ROOM_WEIGHTS", "")
+            and getattr(config, "FLOORPLAN_WINDOW_WEIGHTS", "")
+        )
         
         # Process each page
         for page_idx, (image_path, width_px, height_px) in enumerate(page_info):
@@ -234,6 +243,60 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     print(f"    WARNING in Step 5 (Image Extraction): {e}")
                     traceback.print_exc()
                     extracted_images = []
+
+                # Step 5.5: Extend images for inference
+                print(f"  Step 5.5: Extending images for inference...")
+                extended_images = []
+                try:
+                    extended_images = extend_image_assets(
+                        image_path,
+                        extracted_images,
+                        config.EXTENDED_IMAGE_DIR,
+                        page_idx,
+                        pad_ratio=config.FLOORPLAN_EXTEND_RATIO,
+                    )
+                    extended_map = {info["source_index"]: info for info in extended_images}
+                    for idx, img_info in enumerate(extracted_images):
+                        extended_info = extended_map.get(idx)
+                        img_info["extended_image_path"] = (
+                            extended_info["image_path"] if extended_info else None
+                        )
+                        img_info["extended_bbox_px"] = (
+                            extended_info["extended_bbox_px"] if extended_info else None
+                        )
+                    print(f"    Extended {len(extended_images)} images")
+                except Exception as e:
+                    print(f"    WARNING in Step 5.5 (Image Extension): {e}")
+                    traceback.print_exc()
+
+                # Step 5.6: Floorplan inference on extended images
+                print(f"  Step 5.6: Running floorplan inference...")
+                if floorplan_enabled and extended_images:
+                    try:
+                        if floorplan_predictor is None:
+                            from inference import FloorplanPipelinePredictor
+
+                            floorplan_predictor = FloorplanPipelinePredictor(
+                                wall_a_weights=config.FLOORPLAN_WALL_A_WEIGHTS,
+                                wall_b_weights=config.FLOORPLAN_WALL_B_WEIGHTS,
+                                room_weights=config.FLOORPLAN_ROOM_WEIGHTS,
+                                window_weights=config.FLOORPLAN_WINDOW_WEIGHTS,
+                                device=config.FLOORPLAN_DEVICE,
+                                imgsz=config.FLOORPLAN_IMGSZ,
+                                half=config.FLOORPLAN_HALF,
+                            )
+                        for info in extended_images:
+                            ext_path = info["image_path"]
+                            img_bgr = cv2.imread(ext_path)
+                            if img_bgr is None:
+                                continue
+                            bundle = floorplan_predictor.predict_bundle(img_bgr)
+                            src_idx = info["source_index"]
+                            if 0 <= src_idx < len(extracted_images):
+                                extracted_images[src_idx]["floorplan_inference"] = bundle
+                    except Exception as e:
+                        print(f"    WARNING in Step 5.6 (Floorplan Inference): {e}")
+                        traceback.print_exc()
                 
                 # Step 6: Image OCR
                 print(f"  Step 6: Running OCR on images...")

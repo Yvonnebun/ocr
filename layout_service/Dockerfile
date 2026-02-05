@@ -9,6 +9,8 @@ RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y --no-install
 
 WORKDIR /app
 
+RUN mkdir -p /app/shared_data
+
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
@@ -24,5 +26,4 @@ COPY . .
 
 EXPOSE 8001
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
-
 
