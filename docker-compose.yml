@@ -22,12 +22,10 @@ services:
 
   ocr-pipeline:
     build: .
-
     device_requests:
       - driver: nvidia
-        count: -1
-        capabilities: ["gpu"]
-
+        count: all
+        capabilities: [gpu]
     depends_on:
       - layout-service
       - paddle-service
