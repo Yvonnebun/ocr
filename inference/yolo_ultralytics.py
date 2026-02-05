@@ -12,11 +12,30 @@ class UltralyticsYoloPredictor:
         from ultralytics import YOLO
 
         self.model = YOLO(weights_path)
-        self.device = device
+        self.device = self._resolve_device(device)
         self.imgsz = imgsz
-        self.half = half
+        self.half = half if self.device != "cpu" else False
         self.model_name = getattr(self.model, "model", None).__class__.__name__ if hasattr(self.model, "model") else "yolo"
         self.model_version = getattr(self.model, "version", "unknown")
+
+    def _resolve_device(self, device: str) -> str:
+        device_str = str(device) if device is not None else "auto"
+        normalized = device_str.strip().lower()
+        try:
+            import torch
+        except ImportError:
+            return "cpu"
+
+        if normalized in {"auto", ""}:
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                return "cuda:0"
+            return "cpu"
+
+        if normalized.startswith("cuda") or normalized.isdigit():
+            if not torch.cuda.is_available() or torch.cuda.device_count() == 0:
+                return "cpu"
+
+        return device_str
 
     def _extract_detections(self, result) -> List[DetectionTD]:
         detections: List[DetectionTD] = []
@@ -46,15 +65,17 @@ class UltralyticsYoloPredictor:
         classes: Optional[List[int]] = None,
     ) -> ModelResultTD:
         h, w = image_bgr.shape[:2]
+        runtime_device = self._resolve_device(self.device)
+        runtime_half = self.half if runtime_device != "cpu" else False
         results = self.model.predict(
             image_bgr,
             conf=conf,
             iou=iou,
             max_det=max_det,
             classes=classes,
-            device=self.device,
+            device=runtime_device,
             imgsz=self.imgsz,
-            half=self.half,
+            half=runtime_half,
             verbose=False,
         )
         if results:
