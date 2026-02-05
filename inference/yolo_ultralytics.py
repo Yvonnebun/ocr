@@ -65,15 +65,17 @@ class UltralyticsYoloPredictor:
         classes: Optional[List[int]] = None,
     ) -> ModelResultTD:
         h, w = image_bgr.shape[:2]
+        runtime_device = self._resolve_device(self.device)
+        runtime_half = self.half if runtime_device != "cpu" else False
         results = self.model.predict(
             image_bgr,
             conf=conf,
             iou=iou,
             max_det=max_det,
             classes=classes,
-            device=self.device,
+            device=runtime_device,
             imgsz=self.imgsz,
-            half=self.half,
+            half=runtime_half,
             verbose=False,
         )
         if results:
