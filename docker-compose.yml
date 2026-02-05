@@ -22,6 +22,7 @@ services:
 
   ocr-pipeline:
     build: .
+    gpus: all
     depends_on:
       - layout-service
       - paddle-service
