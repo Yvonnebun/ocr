@@ -32,5 +32,3 @@ services:
     volumes:
       - ./shared_data:/app/shared_data
       - ./models:/app/models
-      - ./sample.pdf:/app/sample.pdf:ro
-    command: ["python", "pipeline.py", "/app/sample.pdf"]
