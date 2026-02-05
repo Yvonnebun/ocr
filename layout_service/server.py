@@ -5,6 +5,8 @@ This service runs in Linux/Docker environment where detectron2 is available.
 """
 import os
 import sys
+import shutil
+import yaml
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import layoutparser as lp
@@ -68,14 +70,29 @@ def get_layout_model():
     """Get or create the layout detection model (singleton)."""
     global _layout_model
     if _layout_model is None:
-        try:
-            print("Loading Prima layout model...")
-            _layout_model = lp.Detectron2LayoutModel(
+        def _load_model() -> lp.Detectron2LayoutModel:
+            return lp.Detectron2LayoutModel(
                 'lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/config',
                 extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.3],
                 label_map={1:"Text", 2:"Image", 3:"Table", 4:"Maths", 5:"Separator", 6:"Other"},
             )
+
+        try:
+            print("Loading Prima layout model...")
+            _layout_model = _load_model()
             print("Layout model loaded successfully")
+        except yaml.scanner.ScannerError as e:
+            print(f"WARNING: Layout model config parse failed: {e}")
+            cache_dir = os.path.expanduser("~/.torch/iopath_cache")
+            print(f"Clearing iopath cache: {cache_dir}")
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            try:
+                _layout_model = _load_model()
+                print("Layout model loaded successfully after cache clear")
+            except Exception as inner_exc:
+                print(f"ERROR: Failed to load layout model after cache clear: {inner_exc}")
+                traceback.print_exc()
+                raise
         except Exception as e:
             print(f"ERROR: Failed to load layout model: {e}")
             traceback.print_exc()
@@ -234,4 +251,3 @@ if __name__ == '__main__':
         sys.exit(1)
     
     app.run(host=args.host, port=args.port, debug=args.debug)
-
