@@ -15,7 +15,7 @@ class WallRoomPipelinePredictor:
         wall_b_weights: str,
         room_weights: str,
         window_weights: str,
-        device: str = "cuda:0",
+        device: str = "auto",
         imgsz: int = 1024,
         half: bool = True,
         max_pixels: int = 8_000_000,

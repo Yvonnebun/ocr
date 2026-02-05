@@ -8,7 +8,7 @@ from .contracts import DetectionTD, ModelResultTD
 
 
 class UltralyticsYoloPredictor:
-    def __init__(self, weights_path: str, device: str = "cuda:0", imgsz: int = 1024, half: bool = True):
+    def __init__(self, weights_path: str, device: str = "auto", imgsz: int = 1024, half: bool = True):
         from ultralytics import YOLO
 
         self.model = YOLO(weights_path)
