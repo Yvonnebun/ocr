@@ -65,6 +65,14 @@ def paddle_ocr(image_path: str) -> List[Dict]:
                 continue
             raise RuntimeError(f"Cannot connect to paddle-service at {config.PADDLE_SERVICE_URL}") from exc
         except requests.exceptions.HTTPError as exc:
-            raise RuntimeError(f"Paddle-service HTTP error: {exc}") from exc
+            response_text = ""
+            try:
+                response_text = response.text
+            except Exception:
+                response_text = ""
+            detail = f"{exc}"
+            if response_text:
+                detail = f"{detail} - {response_text.strip()}"
+            raise RuntimeError(f"Paddle-service HTTP error: {detail}") from exc
 
     return []

@@ -16,6 +16,7 @@ from paddleocr import PaddleOCR
 
 app = FastAPI()
 _ocr_model: Optional[PaddleOCR] = None
+SHARED_VOLUME_ROOT = os.getenv("SHARED_VOLUME_ROOT", "/app/shared_data")
 
 
 class PredictRequest(BaseModel):
@@ -67,14 +68,44 @@ def _bbox_from_quad(quad: Any) -> Optional[List[float]]:
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
+def _resolve_shared_path(path: str) -> str:
+    if not path:
+        raise HTTPException(status_code=400, detail="Empty image_path")
+    if os.path.isabs(path):
+        if not path.startswith(SHARED_VOLUME_ROOT.rstrip("/") + "/"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"image_path must be under {SHARED_VOLUME_ROOT}: {path}",
+            )
+        return path
+    return os.path.join(SHARED_VOLUME_ROOT, path.lstrip("/"))
+
+
+def _list_dir(path: str, limit: int = 25) -> List[str]:
+    try:
+        entries = os.listdir(path)
+    except OSError:
+        return []
+    return sorted(entries)[:limit]
+
+
 @app.post("/predict")
 def predict(req: PredictRequest) -> Dict[str, Any]:
     image_path = req.image_path
 
     if not image_path:
         raise HTTPException(status_code=400, detail="Missing image_path")
+    image_path = _resolve_shared_path(image_path)
     if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail=f"Image file not found: {image_path}")
+        parent_dir = os.path.dirname(image_path)
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"Image file not found: {image_path}",
+                "shared_root": SHARED_VOLUME_ROOT,
+                "dir_listing": _list_dir(parent_dir),
+            },
+        )
 
     model = get_ocr_model()
 

@@ -53,6 +53,30 @@ def merge_union(a: List[float], b: List[float]) -> List[float]:
     return [min(ax0, bx0), min(ay0, by0), max(ax1, bx1), max(ay1, by1)]
 
 
+def clamp_value(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(max_value, value))
+
+
+def expand_bbox_with_padding(
+    bbox: List[float],
+    width: int,
+    height: int,
+    pad_ratio: float,
+    min_pad: int,
+    max_pad: int,
+) -> List[float]:
+    x0, y0, x1, y1 = bbox
+    w = max(0.0, x1 - x0)
+    h = max(0.0, y1 - y0)
+    pad_x = clamp_value(int(round(pad_ratio * w)), min_pad, max_pad)
+    pad_y = clamp_value(int(round(pad_ratio * h)), min_pad, max_pad)
+    x0p = max(0.0, x0 - pad_x)
+    y0p = max(0.0, y0 - pad_y)
+    x1p = min(float(width), x1 + pad_x)
+    y1p = min(float(height), y1 + pad_y)
+    return [x0p, y0p, x1p, y1p]
+
+
 def is_sidebar_bbox(
     bbox: List[float],
     width: int,

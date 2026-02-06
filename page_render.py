@@ -2,8 +2,7 @@
 Step 1: Page Render - PDF to image conversion
 """
 import os
-from pdf2image import convert_from_path
-from PIL import Image
+import fitz
 from typing import List, Tuple
 import config
 
@@ -28,28 +27,27 @@ def render_pdf_pages(pdf_path: str, output_dir: str = None) -> List[Tuple[str, i
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        # Convert PDF to images (DPI=200 for good quality)
-        print(f"  Converting PDF to images (this may take a while)...")
-        images = convert_from_path(pdf_path, dpi=200)
-        print(f"  Converted {len(images)} pages")
+        print("  Converting PDF to images (this may take a while)...")
+        doc = fitz.open(pdf_path)
     except Exception as e:
-        raise RuntimeError(f"Failed to convert PDF to images: {e}. Make sure Poppler is installed and in PATH.")
-    
+        raise RuntimeError(f"Failed to open PDF: {e}.") from e
+
     page_info = []
-    for idx, img in enumerate(images):
+    for idx, page in enumerate(doc):
         try:
-            # Save as PNG
+            zoom = config.RENDER_DPI / 72.0
+            matrix = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
             image_path = os.path.join(output_dir, f"page_{idx:04d}.png")
-            img.save(image_path, "PNG")
-            
-            width, height = img.size
-            page_info.append((image_path, width, height))
+            pix.save(image_path)
+            page_info.append((image_path, pix.width, pix.height))
         except Exception as e:
             print(f"  WARNING: Failed to save page {idx}: {e}")
-            # Continue with other pages
+            continue
+
+    doc.close()
     
     if not page_info:
         raise RuntimeError("No pages were successfully rendered")
     
     return page_info
-

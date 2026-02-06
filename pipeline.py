@@ -5,17 +5,21 @@ import os
 import json
 import sys
 import traceback
-from typing import Dict, List
+import time
+from typing import Dict, List, Optional
+import cv2
 import config
 from page_render import render_pdf_pages
 from layout_detect import detect_layout, filter_figure_blocks
-from image_extraction import extract_image_assets
+from door_detect import detect_door_count
+from image_extraction import extract_image_assets, extend_image_assets
 from image_ocr import ocr_all_images
 from native_text import extract_native_text, filter_text_excluding_images
 from scanned_page import ocr_non_image_regions
 from page_gate import page_has_floorplan_keyword
 from run_logger import init_run_logger, get_run_logger
 import utils
+from table_extract import extract_keyword_tables
 from caption_extract import (
     extract_captions_from_native,
     extract_captions_from_ocr,
@@ -43,9 +47,32 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
         run_logger.log_event("run_start", {"pdf_path": pdf_path, "output_dir": output_dir})
         
         print(f"Output directory: {output_dir}")
+        print(f"Shared volume root: {config.SHARED_VOLUME_ROOT}")
+        print(f"Render dir: {config.RENDER_DIR}")
+        print(f"Gate preprocess dir: {config.GATE_PREPROCESS_DIR}")
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(config.IMAGE_DIR, exist_ok=True)
         os.makedirs(config.RENDER_DIR, exist_ok=True)
+        os.makedirs(config.GATE_PREPROCESS_DIR, exist_ok=True)
+        print(
+            "Shared dir contents:",
+            os.path.exists(config.SHARED_VOLUME_ROOT),
+            sorted(os.listdir(config.SHARED_VOLUME_ROOT))[:25]
+            if os.path.exists(config.SHARED_VOLUME_ROOT)
+            else [],
+        )
+        print(
+            "Render dir contents:",
+            os.path.exists(config.RENDER_DIR),
+            sorted(os.listdir(config.RENDER_DIR))[:25] if os.path.exists(config.RENDER_DIR) else [],
+        )
+        print(
+            "Gate preprocess contents:",
+            os.path.exists(config.GATE_PREPROCESS_DIR),
+            sorted(os.listdir(config.GATE_PREPROCESS_DIR))[:25]
+            if os.path.exists(config.GATE_PREPROCESS_DIR)
+            else [],
+        )
         
         # Step 1: Page Render
         print("Step 1: Rendering PDF pages...")
@@ -60,13 +87,25 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
         
         result = {
             "meta": {
-                "page_count": page_count
+                "page_count": page_count,
+                "pdf_name": os.path.basename(pdf_path),
+                "render_dpi": config.RENDER_DPI,
             },
             "text_content": "",
-            "pages": []
+            "pages": [],
+            "selected_pages": [],
+            "rejected_pages": [],
         }
         
         all_text_content = []
+        floorplan_predictor: Optional["FloorplanPipelinePredictor"] = None
+        floorplan_enabled = bool(
+            getattr(config, "FLOORPLAN_INFERENCE_ENABLED", False)
+            and getattr(config, "FLOORPLAN_WALL_A_WEIGHTS", "")
+            and getattr(config, "FLOORPLAN_WALL_B_WEIGHTS", "")
+            and getattr(config, "FLOORPLAN_ROOM_WEIGHTS", "")
+            and getattr(config, "FLOORPLAN_WINDOW_WEIGHTS", "")
+        )
         
         # Process each page
         for page_idx, (image_path, width_px, height_px) in enumerate(page_info):
@@ -77,6 +116,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     run_logger.increment("pages_processed")
                     run_logger.log_event("page_start", {"page_idx": page_idx, "image_path": image_path})
                 
+                page_size_in = [width_px / config.RENDER_DPI, height_px / config.RENDER_DPI]
                 page_result = {
                     "page_idx": page_idx,
                     "flags": {
@@ -84,7 +124,12 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         "page_keyword_gate": True
                     },
                     "images": [],
-                    "captions": []
+                    "captions": [],
+                    "tables": [],
+                    "door_count": 0,
+                    "page_size_in": page_size_in,
+                    "render_dpi": config.RENDER_DPI,
+                    "pdf_name": os.path.basename(pdf_path),
                 }
 
                 # Step 1.5: Page keyword gate (native text + OCR)
@@ -92,7 +137,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 print(f"  Step 1.5: Page keyword gate...")
                 try:
                     native_text_blocks, has_native_text = extract_native_text(
-                        pdf_path, page_idx, width_px, height_px
+                        pdf_path, page_idx, width_px, height_px, image_path
                     )
                     page_has_kw, force_keep, gate_source = page_has_floorplan_keyword(
                         image_path, native_text_blocks
@@ -141,11 +186,48 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 figure_blocks = filter_figure_blocks(layout_blocks)
                 print(f"    Found {len(figure_blocks)} figure candidates")
 
+                # Step 3.5: Door detection gate
+                print(f"  Step 3.5: Detecting doors...")
+                try:
+                    door_count, door_stats = detect_door_count(image_path)
+                    page_result["door_count"] = door_count
+                    if run_logger:
+                        run_logger.log_event(
+                            "door_detect",
+                            {"page_idx": page_idx, "door_count": door_count, **door_stats},
+                        )
+                except Exception as e:
+                    print(f"    WARNING in Step 3.5 (Door Detect): {e}")
+                    traceback.print_exc()
+                    door_count = 0
+                    page_result["door_count"] = door_count
+
+                if door_count < config.DOOR_MIN_COUNT:
+                    print(f"  Page {page_idx + 1} skipped by door gate (door_count={door_count})")
+                    result["rejected_pages"].append(page_idx)
+                    result["pages"].append(page_result)
+                    if run_logger:
+                        run_logger.log_event(
+                            "page_skipped",
+                            {"page_idx": page_idx, "reason": "door_gate", "door_count": door_count},
+                        )
+                    continue
+
                 # Step 4: Region Refiner (removed)
                 # codex update: skip region_refiner entirely; use preprocessed candidates directly
                 if figure_blocks:
                     try:
-                        candidate_bboxes = [block["bbox_px"] for block in figure_blocks]
+                        candidate_bboxes = [
+                            utils.expand_bbox_with_padding(
+                                block["bbox_px"],
+                                width_px,
+                                height_px,
+                                pad_ratio=config.CANDIDATE_PAD_RATIO,
+                                min_pad=config.CANDIDATE_MIN_PAD,
+                                max_pad=config.CANDIDATE_MAX_PAD,
+                            )
+                            for block in figure_blocks
+                        ]
                         candidate_bboxes = utils.preprocess_candidates(
                             candidate_bboxes,
                             width_px,
@@ -185,6 +267,61 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                     print(f"    WARNING in Step 5 (Image Extraction): {e}")
                     traceback.print_exc()
                     extracted_images = []
+
+                # Step 5.5: Extend images for inference
+                print(f"  Step 5.5: Extending images for inference...")
+                extended_images = []
+                try:
+                    extended_images = extend_image_assets(
+                        image_path,
+                        extracted_images,
+                        config.EXTENDED_IMAGE_DIR,
+                        page_idx,
+                        pad_ratio=config.FLOORPLAN_EXTEND_RATIO,
+                    )
+                    extended_map = {info["source_index"]: info for info in extended_images}
+                    for idx, img_info in enumerate(extracted_images):
+                        extended_info = extended_map.get(idx)
+                        img_info["extended_image_path"] = (
+                            extended_info["image_path"] if extended_info else None
+                        )
+                        img_info["extended_bbox_px"] = (
+                            extended_info["extended_bbox_px"] if extended_info else None
+                        )
+                    print(f"    Extended {len(extended_images)} images")
+                except Exception as e:
+                    print(f"    WARNING in Step 5.5 (Image Extension): {e}")
+                    traceback.print_exc()
+
+                # Step 5.6: Floorplan inference on extended images
+                print(f"  Step 5.6: Running floorplan inference...")
+                if floorplan_enabled and extended_images:
+                    try:
+                        if floorplan_predictor is None:
+                            from inference import FloorplanPipelinePredictor
+
+                            floorplan_predictor = FloorplanPipelinePredictor(
+                                wall_a_weights=config.FLOORPLAN_WALL_A_WEIGHTS,
+                                wall_b_weights=config.FLOORPLAN_WALL_B_WEIGHTS,
+                                room_weights=config.FLOORPLAN_ROOM_WEIGHTS,
+                                window_weights=config.FLOORPLAN_WINDOW_WEIGHTS,
+                                device=config.FLOORPLAN_DEVICE,
+                                imgsz=config.FLOORPLAN_IMGSZ,
+                                half=config.FLOORPLAN_HALF,
+                            )
+                        for info in extended_images:
+                            ext_path = info["image_path"]
+                            img_bgr = cv2.imread(ext_path)
+                            if img_bgr is None:
+                                continue
+                            image_id = info.get("image_id", info.get("source_index"))
+                            bundle = floorplan_predictor.predict_bundle(img_bgr, image_id=image_id)
+                            src_idx = info["source_index"]
+                            if 0 <= src_idx < len(extracted_images):
+                                extracted_images[src_idx]["floorplan_inference"] = bundle
+                    except Exception as e:
+                        print(f"    WARNING in Step 5.6 (Floorplan Inference): {e}")
+                        traceback.print_exc()
                 
                 # Step 6: Image OCR
                 print(f"  Step 6: Running OCR on images...")
@@ -232,6 +369,28 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                         traceback.print_exc()
                         ocr_text_blocks = []
                         clean_text_blocks = []
+
+                # Step 9.5: Extract keyword tables on selected pages
+                print(f"  Step 9.5: Extracting keyword tables...")
+                try:
+                    table_blocks = [
+                        block
+                        for block in layout_blocks
+                        if str(block.get("type", "")).strip().lower().replace(" ", "")
+                        in {"table", "tableregion"}
+                    ]
+                    table_text_blocks = native_text_blocks if has_native_text else ocr_text_blocks
+                    page_result["tables"] = extract_keyword_tables(
+                        image_path,
+                        table_blocks,
+                        table_text_blocks,
+                        config.IMAGE_DIR,
+                        page_idx,
+                    )
+                except Exception as e:
+                    print(f"    WARNING in Step 9.5 (Table Extract): {e}")
+                    traceback.print_exc()
+                    page_result["tables"] = []
                 
                 # Caption Extraction
                 print(f"  Extracting captions...")
@@ -264,6 +423,18 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 all_text_content.append(page_text)
                 
                 result["pages"].append(page_result)
+                result["selected_pages"].append(
+                    {
+                        "page_idx": page_idx,
+                        "images": page_result["images"],
+                        "image_sizes": [img.get("image_size") for img in page_result["images"]],
+                        "door_count": page_result["door_count"],
+                        "page_size_in": page_result["page_size_in"],
+                        "render_dpi": config.RENDER_DPI,
+                        "pdf_name": os.path.basename(pdf_path),
+                        "tables": page_result["tables"],
+                    }
+                )
                 print(f"  Page {page_idx + 1} completed")
                 if run_logger:
                     run_logger.log_event("page_complete", {"page_idx": page_idx})
@@ -327,6 +498,10 @@ if __name__ == "__main__":
     try:
         result = process_pdf(pdf_path, output_dir)
         save_result(result)
+        if os.getenv("KEEP_ALIVE", "0").lower() in {"1", "true", "yes"}:
+            print("KEEP_ALIVE enabled; blocking to keep container alive.")
+            while True:
+                time.sleep(3600)
     except Exception as e:
         print(f"\nFATAL ERROR: {e}")
         traceback.print_exc()

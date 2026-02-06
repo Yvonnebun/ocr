@@ -51,10 +51,8 @@ else:
 # 3. 测试依赖包
 print("\n[3] 测试依赖包...")
 dependencies = {
-    'pdf2image': 'pdf2image',
     'PIL': 'Pillow',
     'layoutparser': 'layoutparser',
-    'pytesseract': 'pytesseract',
     'fitz': 'pymupdf',
     'numpy': 'numpy',
     'cv2': 'opencv-python',
@@ -79,16 +77,6 @@ try:
 except ImportError:
     print(f"  ⚠ detectron2 not found (layout detection may fail)")
     missing_deps.append('detectron2 (optional)')
-
-# 测试 Tesseract
-print("\n  测试 Tesseract OCR...")
-try:
-    import pytesseract
-    version = pytesseract.get_tesseract_version()
-    print(f"  ✓ Tesseract OCR version: {version}")
-except Exception as e:
-    print(f"  ✗ Tesseract OCR: {e}")
-    missing_deps.append('tesseract-ocr')
 
 if missing_deps:
     print(f"\n  警告: 缺少 {len(missing_deps)} 个依赖包")
@@ -188,7 +176,7 @@ if page_info:
         
         test_image_path, width_px, height_px = page_info[0]
         native_text_blocks, has_native_text = extract_native_text(
-            pdf_path, 0, width_px, height_px
+            pdf_path, 0, width_px, height_px, test_image_path
         )
         print(f"  ✓ 提取了 {len(native_text_blocks)} 个文本块")
         print(f"  Has native text: {has_native_text}")
@@ -242,4 +230,3 @@ if not pdf_path:
 
 if not failed_imports and pdf_path:
     print("\n所有检查通过! Pipeline 应该可以正常工作。")
-

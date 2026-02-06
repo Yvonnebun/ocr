@@ -5,6 +5,7 @@ This service runs in Linux/Docker environment where detectron2 is available.
 """
 import os
 import sys
+import yaml
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import layoutparser as lp
@@ -15,6 +16,9 @@ import traceback
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for cross-origin requests
+
+# Shared volume root for image paths
+SHARED_VOLUME_ROOT = os.getenv("SHARED_VOLUME_ROOT", "/app/shared_data")
 
 # Global model singleton
 _layout_model = None
@@ -68,19 +72,59 @@ def get_layout_model():
     """Get or create the layout detection model (singleton)."""
     global _layout_model
     if _layout_model is None:
+        def _load_model() -> lp.Detectron2LayoutModel:
+            config_path = os.getenv("PRIMA_CONFIG", "/app/models/prima/config.yaml")
+            model_path = os.getenv("PRIMA_WEIGHTS", "/app/models/prima/model_final.pth")
+            if not os.path.exists(config_path):
+                raise FileNotFoundError(
+                    f"Prima config not found: {config_path}. "
+                    "Ensure ./layout_service/models/prima/config.yaml is present "
+                    "or mount /app/models via docker compose."
+                )
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(
+                    f"Prima weights not found: {model_path}. "
+                    "Ensure ./layout_service/models/prima/model_final.pth is present "
+                    "or mount /app/models via docker compose."
+                )
+            return lp.Detectron2LayoutModel(
+                config_path,
+                model_path,
+                label_map={1:"Text", 2:"Image", 3:"Table", 4:"Maths", 5:"Separator", 6:"Other"},
+                extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.5],
+            )
+
         try:
             print("Loading Prima layout model...")
-            _layout_model = lp.Detectron2LayoutModel(
-                'lp://PrimaLayout/mask_rcnn_R_50_FPN_3x/config',
-                extra_config=["MODEL.ROI_HEADS.SCORE_THRESH_TEST", 0.3],
-                label_map={1:"Text", 2:"Image", 3:"Table", 4:"Maths", 5:"Separator", 6:"Other"},
-            )
+            _layout_model = _load_model()
             print("Layout model loaded successfully")
+        except yaml.scanner.ScannerError as e:
+            print(f"ERROR: Layout model config parse failed: {e}")
+            traceback.print_exc()
+            raise
         except Exception as e:
             print(f"ERROR: Failed to load layout model: {e}")
             traceback.print_exc()
             raise
     return _layout_model
+
+
+def _resolve_shared_path(path: str) -> str:
+    if not path:
+        raise ValueError("Empty image path")
+    if os.path.isabs(path):
+        if not path.startswith(SHARED_VOLUME_ROOT.rstrip("/") + "/"):
+            raise ValueError(f"Image path must be under {SHARED_VOLUME_ROOT}: {path}")
+        return path
+    return os.path.join(SHARED_VOLUME_ROOT, path.lstrip("/"))
+
+
+def _list_dir(path: str, limit: int = 25) -> List[str]:
+    try:
+        entries = os.listdir(path)
+    except OSError:
+        return []
+    return sorted(entries)[:limit]
 
 
 @app.route('/health', methods=['GET'])
@@ -132,11 +176,19 @@ def predict():
         image_path = data.get('image_path')
         if not image_path:
             return jsonify({"error": "Missing 'image_path' in request"}), 400
+
+        try:
+            image_path = _resolve_shared_path(image_path)
+        except ValueError as e:
+            return jsonify({"error": str(e), "shared_root": SHARED_VOLUME_ROOT}), 400
         
         # Check if file exists
         if not os.path.exists(image_path):
+            parent_dir = os.path.dirname(image_path)
             return jsonify({
-                "error": f"Image file not found: {image_path}"
+                "error": f"Image file not found: {image_path}",
+                "shared_root": SHARED_VOLUME_ROOT,
+                "dir_listing": _list_dir(parent_dir),
             }), 404
         
         # Load image
@@ -234,4 +286,3 @@ if __name__ == '__main__':
         sys.exit(1)
     
     app.run(host=args.host, port=args.port, debug=args.debug)
-
