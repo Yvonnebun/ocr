@@ -4,13 +4,17 @@ import cv2
 import numpy as np
 
 
-def polygons_to_mask(polys: List[List[float]], image_shape: Tuple[int, int]) -> np.ndarray:
+def polygons_to_mask(polys: List[object], image_shape: Tuple[int, int]) -> np.ndarray:
     height, width = image_shape
     mask = np.zeros((height, width), dtype=np.uint8)
     if not polys:
         return mask
     for poly in polys:
-        if not poly or len(poly) < 6 or len(poly) % 2 != 0:
+        if not poly:
+            continue
+        if isinstance(poly, dict):
+            poly = poly.get("points", [])
+        if not poly or len(poly) < 6:
             continue
         coords = np.array(poly, dtype=np.float32).reshape(-1, 2)
         coords = np.rint(coords).astype(np.int32)

@@ -18,7 +18,7 @@ class ModelResultTD(TypedDict):
     model_version: str
     image: ModelImageTD
     detections: List[DetectionTD]
-    polygons: List[List[float]]
+    polygons: List[Dict[str, object]]
     meta: Dict[str, object]
 
 
