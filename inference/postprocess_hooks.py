@@ -46,6 +46,7 @@ def mask_to_polygons_rings(mask: np.ndarray) -> List[Dict[str, Any]]:
     """
     if mask is None or mask.size == 0:
         return []
+    height, width = mask.shape[:2]
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     if hierarchy is None or len(contours) == 0:
         return []
@@ -60,13 +61,19 @@ def mask_to_polygons_rings(mask: np.ndarray) -> List[Dict[str, Any]]:
         contour = contours[i]
         if contour is None or contour.shape[0] < 3:
             continue
-        exterior = contour.reshape(-1, 2).astype(np.float32).flatten().tolist()
+        exterior_coords = contour.reshape(-1, 2).astype(np.int32)
+        exterior_coords[:, 0] = np.clip(exterior_coords[:, 0], 0, width - 1)
+        exterior_coords[:, 1] = np.clip(exterior_coords[:, 1], 0, height - 1)
+        exterior = exterior_coords.astype(np.float32).flatten().tolist()
         holes: List[List[float]] = []
         child = int(h[2])
         while child != -1:
             hole_contour = contours[child]
             if hole_contour is not None and hole_contour.shape[0] >= 3:
-                hole = hole_contour.reshape(-1, 2).astype(np.float32).flatten().tolist()
+                hole_coords = hole_contour.reshape(-1, 2).astype(np.int32)
+                hole_coords[:, 0] = np.clip(hole_coords[:, 0], 0, width - 1)
+                hole_coords[:, 1] = np.clip(hole_coords[:, 1], 0, height - 1)
+                hole = hole_coords.astype(np.float32).flatten().tolist()
                 holes.append(hole)
             child = int(hierarchy[child][0])
         rings.append({"exterior": exterior, "holes": holes})
