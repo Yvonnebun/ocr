@@ -7,6 +7,9 @@ the NVIDIA container runtime.
 PaddleOCR and Detectron2 should be run via their dedicated Docker images rather
 than installed locally.
 
+For local (non-Docker) dependency setup and OpenCV `libGL.so.1` troubleshooting,
+see `docs/ENV_REQUIREMENTS.md`.
+
 ## Build
 
 ```bash
