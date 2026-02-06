@@ -137,6 +137,7 @@ def main() -> None:
             wall_polys = (wall_raw.get("wall_a", {}).get("polygons", []) or []) + (
                 wall_raw.get("wall_b", {}).get("polygons", []) or []
             )
+
         room_polys = bundle.get("room", {}).get("result", {}).get("polygons", []) or []
         annotated = _annotate_polygons(image_bgr, wall_polys + room_polys)
         output_path = Path(args.annotated_out)
