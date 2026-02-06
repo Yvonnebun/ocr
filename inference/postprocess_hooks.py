@@ -38,6 +38,42 @@ def mask_to_polygons(mask: np.ndarray) -> List[List[float]]:
     return polygons
 
 
+def mask_to_polygons_rings(mask: np.ndarray) -> List[Dict[str, Any]]:
+    """
+    Return polygons as rings with holes:
+    [{"exterior":[...], "holes":[[...],[...]]}, ...]
+    Points are flattened [x1, y1, x2, y2, ...].
+    """
+    if mask is None or mask.size == 0:
+        return []
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None or len(contours) == 0:
+        return []
+
+    hierarchy = hierarchy[0]
+    rings: List[Dict[str, Any]] = []
+
+    for i, h in enumerate(hierarchy):
+        parent = int(h[3])
+        if parent != -1:
+            continue
+        contour = contours[i]
+        if contour is None or contour.shape[0] < 3:
+            continue
+        exterior = contour.reshape(-1, 2).astype(np.float32).flatten().tolist()
+        holes: List[List[float]] = []
+        child = int(h[2])
+        while child != -1:
+            hole_contour = contours[child]
+            if hole_contour is not None and hole_contour.shape[0] >= 3:
+                hole = hole_contour.reshape(-1, 2).astype(np.float32).flatten().tolist()
+                holes.append(hole)
+            child = int(hierarchy[child][0])
+        rings.append({"exterior": exterior, "holes": holes})
+
+    return rings
+
+
 def merge_wall_predictions(
     wall_a: Dict[str, Any],
     wall_b: Dict[str, Any],
@@ -52,18 +88,25 @@ def merge_wall_predictions(
     mask_a = polygons_to_mask(wall_a_polys, image_shape=image_shape)
     mask_b = polygons_to_mask(wall_b_polys, image_shape=image_shape)
     combined_mask = np.maximum(mask_a, mask_b)
-    combined_polys = mask_to_polygons(combined_mask)
+    combined_rings = mask_to_polygons_rings(combined_mask)
+    combined_polys = [ring["exterior"] for ring in combined_rings if ring.get("exterior")]
 
     merged_result = dict(wall_a)
     merged_result["model_name"] = "wall_merged"
     merged_result["model_version"] = "merged"
     merged_result["polygons"] = combined_polys
+    merged_result["polygons_rings"] = combined_rings
     merged_result["detections"] = (wall_a.get("detections", []) or []) + (wall_b.get("detections", []) or [])
 
     meta = dict(wall_a.get("meta", {}))
     meta["merged_from"] = ["wall_a", "wall_b"]
     meta["merged"] = True
     meta["source_polygon_counts"] = {"wall_a": len(wall_a_polys), "wall_b": len(wall_b_polys)}
+    meta["merged_polygon_counts"] = {
+        "exteriors": len(combined_polys),
+        "rings": len(combined_rings),
+        "holes_total": sum(len(ring.get("holes", [])) for ring in combined_rings),
+    }
     merged_result["meta"] = meta
     return merged_result
 
