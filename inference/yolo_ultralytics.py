@@ -90,6 +90,23 @@ class UltralyticsYoloPredictor:
             )
         return polygons
 
+    def _polygons_to_rings(self, polygons: List[dict]) -> List[dict]:
+        rings: List[dict] = []
+        for poly in polygons:
+            points = poly.get("points") or []
+            if len(points) < 3:
+                continue
+            rings.append(
+                {
+                    "exterior": np.asarray(points, dtype=np.float32).reshape(-1, 2).flatten().tolist(),
+                    "holes": [],
+                    "detection_index": poly.get("detection_index"),
+                    "class_id": poly.get("class_id"),
+                    "score": poly.get("score"),
+                }
+            )
+        return rings
+
     def predict(
         self,
         image_bgr: np.ndarray,
@@ -114,12 +131,14 @@ class UltralyticsYoloPredictor:
             verbose=False,
         )
         polygons: List[dict] = []
+        polygons_rings: List[dict] = []
         polygons_mode = "none"
         if results:
             result = results[0]
             detections = self._extract_detections(result)
             if polygon_mode in {"xy", "xyn"}:
                 polygons = self._extract_polygons(result, normalized=polygon_mode == "xyn")
+                polygons_rings = self._polygons_to_rings(polygons)
                 polygons_mode = polygon_mode
         else:
             detections = []
@@ -129,6 +148,7 @@ class UltralyticsYoloPredictor:
             "image": {"width": int(w), "height": int(h)},
             "detections": detections,
             "polygons": polygons,
+            "polygons_rings": polygons_rings,
             "meta": {
                 "boxes_n": int(len(result.boxes)) if results and getattr(result, "boxes", None) is not None else 0,
                 "masks_n": int(len(result.masks.xy)) if results and getattr(result, "masks", None) is not None else 0,
