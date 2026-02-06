@@ -40,19 +40,28 @@ def _scale_polygon_points(points: list, scale: float) -> list:
     return coords.tolist()
 
 
-def _annotate_polygons(image_bgr: cv2.Mat, polygons: list[dict], scale: float = 1.0) -> cv2.Mat:
+def _extract_points_and_class(poly: object) -> tuple[list, int | None]:
+    if isinstance(poly, dict):
+        return poly.get("points") or [], poly.get("class_id")
+    if isinstance(poly, list):
+        if poly and isinstance(poly[0], (int, float)):
+            return poly, None
+        return poly, None
+    return [], None
+
+
+def _annotate_polygons(image_bgr: cv2.Mat, polygons: list[object], scale: float = 1.0) -> cv2.Mat:
     annotated = image_bgr.copy()
     for poly in polygons:
-        if not isinstance(poly, dict):
-            continue
-        points = _scale_polygon_points(poly.get("points") or [], scale)
+        points, class_id = _extract_points_and_class(poly)
+        points = _scale_polygon_points(points, scale)
         if len(points) < 3:
             continue
         coords = np.asarray(points, dtype=np.float32).reshape(-1, 2)
         if coords.shape[0] < 3:
             continue
         pts = coords.astype(np.int32).reshape((-1, 1, 2))
-        color = _color_for_class(poly.get("class_id"))
+        color = _color_for_class(class_id)
         cv2.polylines(annotated, [pts], isClosed=True, color=color, thickness=2)
     return annotated
 
