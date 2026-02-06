@@ -4,7 +4,7 @@ Configuration file for PDF Image-Text Separation Pipeline
 import os
 
 # Paths
-OUTPUT_DIR = "output"
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "output")
 IMAGE_DIR = os.path.join(OUTPUT_DIR, "images")
 RENDER_DIR = os.path.join(OUTPUT_DIR, "renders")
 
@@ -93,7 +93,7 @@ GATE_OCR_PARAMS = dict(
 )
 
 # codex update: OCR gate preprocessing (align with floorplan script)
-KW_STRIP_Y0_RATIO = 0.80
+KW_STRIP_Y0_RATIO = 0.4
 KW_OCR_MAX_SIDE = 3840
 KW_OCR_MIN_UPSCALE = 2.0
 KW_OCR_MAX_UPSCALE = 4.0
