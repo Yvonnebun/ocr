@@ -56,6 +56,40 @@ class UltralyticsYoloPredictor:
             )
         return detections
 
+    def _extract_polygons(self, result, normalized: bool = False) -> List[dict]:
+        polygons: List[dict] = []
+        masks = getattr(result, "masks", None)
+        if masks is None:
+            return polygons
+        mask_polys = getattr(masks, "xyn" if normalized else "xy", None)
+        if not mask_polys:
+            return polygons
+        boxes = getattr(result, "boxes", None)
+        for i, poly in enumerate(mask_polys):
+            try:
+                coords = np.asarray(poly, dtype=np.float32).reshape(-1, 2)
+            except Exception:
+                continue
+            if coords.shape[0] < 3:
+                continue
+            class_id = None
+            score = None
+            if boxes is not None and i < len(boxes):
+                box = boxes[i]
+                if hasattr(box, "cls"):
+                    class_id = int(box.cls[0].item()) if hasattr(box.cls[0], "item") else int(box.cls[0])
+                if hasattr(box, "conf"):
+                    score = float(box.conf[0].item()) if hasattr(box.conf[0], "item") else float(box.conf[0])
+            polygons.append(
+                {
+                    "detection_index": int(i),
+                    "class_id": class_id,
+                    "score": score,
+                    "points": coords.tolist(),
+                }
+            )
+        return polygons
+
     def predict(
         self,
         image_bgr: np.ndarray,
@@ -63,6 +97,7 @@ class UltralyticsYoloPredictor:
         iou: float = 0.7,
         max_det: int = 300,
         classes: Optional[List[int]] = None,
+        polygon_mode: str = "xy",
     ) -> ModelResultTD:
         h, w = image_bgr.shape[:2]
         runtime_device = self._resolve_device(self.device)
@@ -78,9 +113,14 @@ class UltralyticsYoloPredictor:
             half=runtime_half,
             verbose=False,
         )
+        polygons: List[dict] = []
+        polygons_mode = "none"
         if results:
             result = results[0]
             detections = self._extract_detections(result)
+            if polygon_mode in {"xy", "xyn"}:
+                polygons = self._extract_polygons(result, normalized=polygon_mode == "xyn")
+                polygons_mode = polygon_mode
         else:
             detections = []
         return {
@@ -88,6 +128,10 @@ class UltralyticsYoloPredictor:
             "model_version": str(self.model_version),
             "image": {"width": int(w), "height": int(h)},
             "detections": detections,
-            "polygons": [],
-            "meta": {},
+            "polygons": polygons,
+            "meta": {
+                "boxes_n": int(len(result.boxes)) if results and getattr(result, "boxes", None) is not None else 0,
+                "masks_n": int(len(result.masks.xy)) if results and getattr(result, "masks", None) is not None else 0,
+                "polygons_mode": polygons_mode,
+            },
         }

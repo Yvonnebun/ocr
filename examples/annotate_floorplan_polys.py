@@ -9,11 +9,13 @@ import cv2
 import numpy as np
 
 
-def _iter_polygons(polys: Iterable[List[float]]) -> Iterable[np.ndarray]:
+def _iter_polygons(polys: Iterable[object]) -> Iterable[np.ndarray]:
     for poly in polys:
-        if not poly or len(poly) < 6:
+        if not poly:
             continue
-        if len(poly) % 2 != 0:
+        if isinstance(poly, dict):
+            poly = poly.get("points", [])
+        if not poly or len(poly) < 6:
             continue
         coords = np.array(poly, dtype=np.float32).reshape(-1, 2)
         yield coords
@@ -25,7 +27,7 @@ def _scale_polygon(coords: np.ndarray, scale: float) -> np.ndarray:
     return coords / scale
 
 
-def _draw_polygons(image: np.ndarray, polys: Iterable[List[float]], color: Tuple[int, int, int]) -> None:
+def _draw_polygons(image: np.ndarray, polys: Iterable[object], color: Tuple[int, int, int]) -> None:
     for coords in _iter_polygons(polys):
         pts = coords.astype(np.int32).reshape((-1, 1, 2))
         cv2.polylines(image, [pts], isClosed=True, color=color, thickness=2)
@@ -55,10 +57,22 @@ def _annotate_image(image_info: Dict[str, object], output_dir: Path) -> Path | N
     room_polys = bundle.get("room", {}).get("result", {}).get("polygons", [])
 
     if scale_factor != 1.0:
-        wall_polys = [_scale_polygon(np.array(poly, dtype=np.float32).reshape(-1, 2), scale_factor).flatten().tolist()
-                      for poly in wall_polys if poly]
-        room_polys = [_scale_polygon(np.array(poly, dtype=np.float32).reshape(-1, 2), scale_factor).flatten().tolist()
-                      for poly in room_polys if poly]
+        wall_polys = [
+            _scale_polygon(
+                np.array((poly.get("points") if isinstance(poly, dict) else poly), dtype=np.float32).reshape(-1, 2),
+                scale_factor,
+            ).flatten().tolist()
+            for poly in wall_polys
+            if poly
+        ]
+        room_polys = [
+            _scale_polygon(
+                np.array((poly.get("points") if isinstance(poly, dict) else poly), dtype=np.float32).reshape(-1, 2),
+                scale_factor,
+            ).flatten().tolist()
+            for poly in room_polys
+            if poly
+        ]
 
     _draw_polygons(image, wall_polys, (0, 255, 0))
     _draw_polygons(image, room_polys, (255, 0, 0))
