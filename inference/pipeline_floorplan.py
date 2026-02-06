@@ -71,13 +71,38 @@ class FloorplanPipelinePredictor:
         max_side: int = 4096,
         gate_action: str = "downscale",
     ) -> None:
-        self.wall_a = UltralyticsYoloPredictor(wall_a_weights, device=device, imgsz=imgsz, half=half)
-        self.wall_b = UltralyticsYoloPredictor(wall_b_weights, device=device, imgsz=imgsz, half=half)
-        self.room = UltralyticsYoloPredictor(room_weights, device=device, imgsz=imgsz, half=half)
-        self.window = UltralyticsYoloPredictor(window_weights, device=device, imgsz=imgsz, half=half)
+        self.wall_a_weights = wall_a_weights
+        self.wall_b_weights = wall_b_weights
+        self.room_weights = room_weights
+        self.window_weights = window_weights
+        self.device = device
+        self.imgsz = imgsz
+        self.half = half
+        self.wall_a = None
+        self.wall_b = None
+        self.room = None
+        self.window = None
         self.max_pixels = max_pixels
         self.max_side = max_side
         self.gate_action = gate_action
+
+    def _ensure_models(self) -> None:
+        if self.wall_a is None:
+            self.wall_a = UltralyticsYoloPredictor(
+                self.wall_a_weights, device=self.device, imgsz=self.imgsz, half=self.half
+            )
+        if self.wall_b is None:
+            self.wall_b = UltralyticsYoloPredictor(
+                self.wall_b_weights, device=self.device, imgsz=self.imgsz, half=self.half
+            )
+        if self.room is None:
+            self.room = UltralyticsYoloPredictor(
+                self.room_weights, device=self.device, imgsz=self.imgsz, half=self.half
+            )
+        if self.window is None:
+            self.window = UltralyticsYoloPredictor(
+                self.window_weights, device=self.device, imgsz=self.imgsz, half=self.half
+            )
 
     def predict_bundle(
         self,
@@ -126,6 +151,8 @@ class FloorplanPipelinePredictor:
                 "window": {"source_models": ["window"], "count": 0},
                 "total_ms": (t_end - t0) * 1000.0,
             }
+
+        self._ensure_models()
 
         wall_a_result = self.wall_a.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         wall_b_result = self.wall_b.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
