@@ -119,6 +119,23 @@ def _ocr_items_from_service(image_path: str) -> List[Dict[str, float]]:
     return items
 
 
+def _items_from_text_blocks(text_blocks: Optional[List[Dict[str, Any]]]) -> List[Dict[str, float]]:
+    """Normalize text blocks with bbox_px into matcher items."""
+    items: List[Dict[str, float]] = []
+    for block in (text_blocks or []):
+        text = _normalize_text(block.get("text", ""))
+        if not text:
+            continue
+        bbox = block.get("bbox_px") or block.get("bbox") or []
+        if not bbox or len(bbox) < 4:
+            continue
+        x0, y0, x1, y1 = map(float, bbox[:4])
+        h = max(1.0, y1 - y0)
+        cx, cy = (x0 + x1) * 0.5, (y0 + y1) * 0.5
+        items.append({"text": text, "bbox": [x0, y0, x1, y1], "h": h, "cx": cx, "cy": cy})
+    return items
+
+
 def _kw_match_floor_plan(
     items: List[Dict[str, Any]],
     height_rel_tol: float = 0.25,
@@ -169,7 +186,12 @@ def page_has_floorplan_keyword(
 ) -> Tuple[bool, bool, str]:
     # codex update: page-level keyword gate using native text then OCR
     native_text = " ".join(block.get("text", "") for block in (native_text_blocks or []))
+    native_items = _items_from_text_blocks(native_text_blocks)
+
     if native_text_has_kw(native_text):
+        strict_hit = _kw_match_floor_plan(native_items)
+        if strict_hit:
+            return True, True, "native_text_strict"
         return True, False, "native_text"
 
     if not getattr(config, "GATE_USE_OCR", True):
