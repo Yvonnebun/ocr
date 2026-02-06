@@ -11,6 +11,41 @@ from .postprocess_hooks import merge_wall_predictions, polygons_to_mask, process
 from .yolo_ultralytics import UltralyticsYoloPredictor
 
 
+def _infer_space_sanity_stats(wall_result: dict, infer_w: int, infer_h: int) -> dict:
+    max_x = 0.0
+    max_y = 0.0
+
+    def _consume_points(points):
+        nonlocal max_x, max_y
+        if not points:
+            return
+        arr = np.asarray(points, dtype=np.float32).reshape(-1, 2)
+        if arr.size == 0:
+            return
+        max_x = max(max_x, float(np.max(arr[:, 0])))
+        max_y = max(max_y, float(np.max(arr[:, 1])))
+
+    for poly in wall_result.get("polygons", []) or []:
+        if isinstance(poly, dict):
+            _consume_points(poly.get("points", []))
+        else:
+            _consume_points(poly)
+
+    for ring in wall_result.get("polygons_rings", []) or []:
+        _consume_points(ring.get("exterior", []))
+        for hole in ring.get("holes", []) or []:
+            _consume_points(hole)
+
+    eps = 1e-3
+    return {
+        "max_x": max_x,
+        "max_y": max_y,
+        "infer_width": int(infer_w),
+        "infer_height": int(infer_h),
+        "within_infer_space": bool(max_x <= (infer_w - 1 + eps) and max_y <= (infer_h - 1 + eps)),
+    }
+
+
 def _empty_model_result(width: int, height: int) -> ModelResultTD:
     return {
         "model_name": "skipped",
@@ -107,12 +142,19 @@ class FloorplanPipelinePredictor:
             wall_mask = rings_to_mask(wall_rings, image_shape=(infer_h, infer_w))
         else:
             wall_mask = polygons_to_mask(wall_result.get("polygons", []) or [], image_shape=(infer_h, infer_w))
+
+
+        wall_meta = dict(wall_result.get("meta", {}))
+        wall_meta["scale_factor_definition"] = "infer_over_orig"
+        wall_meta["infer_space_sanity"] = _infer_space_sanity_stats(wall_result, infer_w=infer_w, infer_h=infer_h)
+        wall_result["meta"] = wall_meta
+
         room_input = gated_image.copy()
         if wall_mask.size > 0 and np.any(wall_mask > 0):
             room_input[wall_mask > 0] = (255, 255, 255)
 
         room_raw = self.room.predict(room_input, conf=conf, iou=iou, max_det=max_det, classes=classes)
-        room_final = process_room_polygons(room_raw, wall_merged, image_shape=(infer_h, infer_w))
+        room_final = process_room_polygons(room_raw, wall_result, image_shape=(infer_h, infer_w))
 
         window_result = self.window.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         window_count = len(window_result.get("detections", []))

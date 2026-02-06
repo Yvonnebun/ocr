@@ -118,8 +118,17 @@ def merge_wall_predictions(
     """
     wall_a_polys = wall_a.get("polygons", []) or []
     wall_b_polys = wall_b.get("polygons", []) or []
-    mask_a = polygons_to_mask(wall_a_polys, image_shape=image_shape)
-    mask_b = polygons_to_mask(wall_b_polys, image_shape=image_shape)
+    wall_a_rings = wall_a.get("polygons_rings", []) or []
+    wall_b_rings = wall_b.get("polygons_rings", []) or []
+
+    if wall_a_rings:
+        mask_a = rings_to_mask(wall_a_rings, image_shape=image_shape)
+    else:
+        mask_a = polygons_to_mask(wall_a_polys, image_shape=image_shape)
+    if wall_b_rings:
+        mask_b = rings_to_mask(wall_b_rings, image_shape=image_shape)
+    else:
+        mask_b = polygons_to_mask(wall_b_polys, image_shape=image_shape)
     combined_mask = np.maximum(mask_a, mask_b)
     combined_rings = mask_to_polygons_rings(combined_mask)
     combined_polys = [ring["exterior"] for ring in combined_rings if ring.get("exterior")]
@@ -135,6 +144,8 @@ def merge_wall_predictions(
     meta["merged_from"] = ["wall_a", "wall_b"]
     meta["merged"] = True
     meta["source_polygon_counts"] = {"wall_a": len(wall_a_polys), "wall_b": len(wall_b_polys)}
+    meta["source_ring_counts"] = {"wall_a": len(wall_a_rings), "wall_b": len(wall_b_rings)}
+
     meta["merged_polygon_counts"] = {
         "exteriors": len(combined_polys),
         "rings": len(combined_rings),
