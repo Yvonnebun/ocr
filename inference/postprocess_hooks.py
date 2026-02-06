@@ -24,6 +24,32 @@ def polygons_to_mask(polys: List[object], image_shape: Tuple[int, int]) -> np.nd
     return mask
 
 
+def rings_to_mask(rings: List[Dict[str, Any]], image_shape: Tuple[int, int]) -> np.ndarray:
+    height, width = image_shape
+    mask = np.zeros((height, width), dtype=np.uint8)
+    if not rings:
+        return mask
+    for ring in rings:
+        exterior = ring.get("exterior") or []
+        if len(exterior) < 6:
+            continue
+        exterior_pts = np.array(exterior, dtype=np.float32).reshape(-1, 2)
+        exterior_pts = np.rint(exterior_pts).astype(np.int32)
+        exterior_pts[:, 0] = np.clip(exterior_pts[:, 0], 0, width - 1)
+        exterior_pts[:, 1] = np.clip(exterior_pts[:, 1], 0, height - 1)
+        cv2.fillPoly(mask, [exterior_pts], 255)
+
+        for hole in ring.get("holes", []) or []:
+            if len(hole) < 6:
+                continue
+            hole_pts = np.array(hole, dtype=np.float32).reshape(-1, 2)
+            hole_pts = np.rint(hole_pts).astype(np.int32)
+            hole_pts[:, 0] = np.clip(hole_pts[:, 0], 0, width - 1)
+            hole_pts[:, 1] = np.clip(hole_pts[:, 1], 0, height - 1)
+            cv2.fillPoly(mask, [hole_pts], 0)
+    return mask
+
+
 def mask_to_polygons(mask: np.ndarray) -> List[List[float]]:
     if mask is None or mask.size == 0:
         return []

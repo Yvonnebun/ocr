@@ -74,6 +74,12 @@ def main() -> None:
         help="Optional path to write the raw bundle JSON (including polygons).",
     )
     parser.add_argument(
+        "--merge-walls",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to merge wall_a/wall_b polygons before downstream processing.",
+    )
+    parser.add_argument(
         "--annotated-out",
         default=None,
         help="Optional path to write an annotated image with polygon overlays.",
@@ -97,7 +103,7 @@ def main() -> None:
         window_weights=window_weights,
         device=device,
     )
-    bundle = predictor.predict_bundle(image_bgr)
+    bundle = predictor.predict_bundle(image_bgr, merge_walls=args.merge_walls)
 
     wall_det_count = len(bundle["wall"]["result"]["detections"])
     room_det_count = len(bundle["room"]["result"]["detections"])
@@ -124,7 +130,14 @@ def main() -> None:
         print(f"Wrote bundle JSON to {output_path}")
 
     if args.annotated_out:
-        wall_polys = bundle.get("wall", {}).get("result", {}).get("polygons", []) or []
+        if args.merge_walls:
+            wall_polys = bundle.get("wall", {}).get("result", {}).get("polygons", []) or []
+        else:
+            wall_raw = bundle.get("wall_raw", {})
+            wall_polys = (wall_raw.get("wall_a", {}).get("polygons", []) or []) + (
+                wall_raw.get("wall_b", {}).get("polygons", []) or []
+            )
+
         room_polys = bundle.get("room", {}).get("result", {}).get("polygons", []) or []
         annotated = _annotate_polygons(image_bgr, wall_polys + room_polys)
         output_path = Path(args.annotated_out)
