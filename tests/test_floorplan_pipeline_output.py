@@ -50,10 +50,11 @@ def test_floorplan_pipeline_output_contract(monkeypatch: pytest.MonkeyPatch) -> 
     assert bundle["image"]["infer_height"] == 640
     assert bundle["image"]["scale_factor"] == 1.0
     assert bundle["gate"]["status"] == "ok"
-    assert bundle["wall"]["merged"] is False
+    assert bundle["wall"]["merged"] is True
     assert bundle["room"]["postprocessed"] is False
     assert bundle["window"]["count"] == 1
     assert bundle["total_ms"] >= 0.0
+    assert "image_id" in bundle["image"]
 
 
 def test_floorplan_pipeline_gate_reject(monkeypatch: pytest.MonkeyPatch) -> None:

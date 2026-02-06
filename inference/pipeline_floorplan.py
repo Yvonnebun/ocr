@@ -7,8 +7,43 @@ import numpy as np
 
 from .contracts import BundleResultTD, ModelResultTD
 from .gate import apply_oom_gate
-from .postprocess_hooks import merge_wall_predictions, process_room_polygons
+from .postprocess_hooks import merge_wall_predictions, polygons_to_mask, process_room_polygons, rings_to_mask
 from .yolo_ultralytics import UltralyticsYoloPredictor
+
+
+def _infer_space_sanity_stats(wall_result: dict, infer_w: int, infer_h: int) -> dict:
+    max_x = 0.0
+    max_y = 0.0
+
+    def _consume_points(points):
+        nonlocal max_x, max_y
+        if not points:
+            return
+        arr = np.asarray(points, dtype=np.float32).reshape(-1, 2)
+        if arr.size == 0:
+            return
+        max_x = max(max_x, float(np.max(arr[:, 0])))
+        max_y = max(max_y, float(np.max(arr[:, 1])))
+
+    for poly in wall_result.get("polygons", []) or []:
+        if isinstance(poly, dict):
+            _consume_points(poly.get("points", []))
+        else:
+            _consume_points(poly)
+
+    for ring in wall_result.get("polygons_rings", []) or []:
+        _consume_points(ring.get("exterior", []))
+        for hole in ring.get("holes", []) or []:
+            _consume_points(hole)
+
+    eps = 1e-3
+    return {
+        "max_x": max_x,
+        "max_y": max_y,
+        "infer_width": int(infer_w),
+        "infer_height": int(infer_h),
+        "within_infer_space": bool(max_x <= (infer_w - 1 + eps) and max_y <= (infer_h - 1 + eps)),
+    }
 
 
 def _empty_model_result(width: int, height: int) -> ModelResultTD:
@@ -47,10 +82,12 @@ class FloorplanPipelinePredictor:
     def predict_bundle(
         self,
         image_bgr: np.ndarray,
+        image_id: Optional[object] = None,
         conf: float = 0.25,
         iou: float = 0.7,
         max_det: int = 300,
         classes: Optional[List[int]] = None,
+        merge_walls: bool = True,
     ) -> BundleResultTD:
         t0 = time.perf_counter()
         gated_image, gate_info = apply_oom_gate(
@@ -76,6 +113,7 @@ class FloorplanPipelinePredictor:
             return {
                 "model_bundle": "floorplan_bundle",
                 "image": {
+                    "image_id": image_id,
                     "orig_width": orig_w,
                     "orig_height": orig_h,
                     "infer_width": infer_w,
@@ -91,10 +129,32 @@ class FloorplanPipelinePredictor:
 
         wall_a_result = self.wall_a.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         wall_b_result = self.wall_b.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
-        wall_merged = merge_wall_predictions(wall_a_result, wall_b_result, image_shape=(infer_h, infer_w))
+        if merge_walls:
+            wall_result = merge_wall_predictions(wall_a_result, wall_b_result, image_shape=(infer_h, infer_w))
+            wall_merged = True
+        else:
+            wall_result = dict(wall_a_result)
+            wall_result["meta"] = dict(wall_a_result.get("meta", {}))
+            wall_result["meta"]["merged"] = False
+            wall_merged = False
+        wall_rings = wall_result.get("polygons_rings") if isinstance(wall_result, dict) else None
+        if wall_rings:
+            wall_mask = rings_to_mask(wall_rings, image_shape=(infer_h, infer_w))
+        else:
+            wall_mask = polygons_to_mask(wall_result.get("polygons", []) or [], image_shape=(infer_h, infer_w))
 
-        room_raw = self.room.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
-        room_final = process_room_polygons(room_raw, wall_merged, image_shape=(infer_h, infer_w))
+
+        wall_meta = dict(wall_result.get("meta", {}))
+        wall_meta["scale_factor_definition"] = "infer_over_orig"
+        wall_meta["infer_space_sanity"] = _infer_space_sanity_stats(wall_result, infer_w=infer_w, infer_h=infer_h)
+        wall_result["meta"] = wall_meta
+
+        room_input = gated_image.copy()
+        if wall_mask.size > 0 and np.any(wall_mask > 0):
+            room_input[wall_mask > 0] = (255, 255, 255)
+
+        room_raw = self.room.predict(room_input, conf=conf, iou=iou, max_det=max_det, classes=classes)
+        room_final = process_room_polygons(room_raw, wall_result, image_shape=(infer_h, infer_w))
 
         window_result = self.window.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         window_count = len(window_result.get("detections", []))
@@ -103,6 +163,7 @@ class FloorplanPipelinePredictor:
         return {
             "model_bundle": "floorplan_bundle",
             "image": {
+                "image_id": image_id,
                 "orig_width": orig_w,
                 "orig_height": orig_h,
                 "infer_width": infer_w,
@@ -112,9 +173,10 @@ class FloorplanPipelinePredictor:
             "gate": gate,
             "wall": {
                 "source_models": ["wall_a", "wall_b"],
-                "merged": False,
-                "result": wall_merged,
+                "merged": wall_merged,
+                "result": wall_result,
             },
+            "wall_raw": {"wall_a": wall_a_result, "wall_b": wall_b_result},
             "room": {
                 "source_models": ["room"],
                 "postprocessed": False,

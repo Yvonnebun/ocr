@@ -7,6 +7,7 @@ def test_bundle_contract_is_jsonable() -> None:
     bundle: BundleResultTD = {
         "model_bundle": "floorplan_bundle",
         "image": {
+            "image_id": None,
             "orig_width": 100,
             "orig_height": 200,
             "infer_width": 100,

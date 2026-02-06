@@ -314,7 +314,8 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                             img_bgr = cv2.imread(ext_path)
                             if img_bgr is None:
                                 continue
-                            bundle = floorplan_predictor.predict_bundle(img_bgr)
+                            image_id = info.get("image_id", info.get("source_index"))
+                            bundle = floorplan_predictor.predict_bundle(img_bgr, image_id=image_id)
                             src_idx = info["source_index"]
                             if 0 <= src_idx < len(extracted_images):
                                 extracted_images[src_idx]["floorplan_inference"] = bundle
