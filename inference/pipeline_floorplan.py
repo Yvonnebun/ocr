@@ -143,10 +143,12 @@ class FloorplanPipelinePredictor:
         else:
             wall_mask = polygons_to_mask(wall_result.get("polygons", []) or [], image_shape=(infer_h, infer_w))
 
+
         wall_meta = dict(wall_result.get("meta", {}))
         wall_meta["scale_factor_definition"] = "infer_over_orig"
         wall_meta["infer_space_sanity"] = _infer_space_sanity_stats(wall_result, infer_w=infer_w, infer_h=infer_h)
         wall_result["meta"] = wall_meta
+
         room_input = gated_image.copy()
         if wall_mask.size > 0 and np.any(wall_mask > 0):
             room_input[wall_mask > 0] = (255, 255, 255)

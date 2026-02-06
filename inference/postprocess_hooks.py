@@ -145,6 +145,7 @@ def merge_wall_predictions(
     meta["merged"] = True
     meta["source_polygon_counts"] = {"wall_a": len(wall_a_polys), "wall_b": len(wall_b_polys)}
     meta["source_ring_counts"] = {"wall_a": len(wall_a_rings), "wall_b": len(wall_b_rings)}
+
     meta["merged_polygon_counts"] = {
         "exteriors": len(combined_polys),
         "rings": len(combined_rings),

@@ -32,6 +32,7 @@ def _color_for_class(class_id: int | None) -> tuple[int, int, int]:
     return palette[class_id % len(palette)]
 
 
+
 def _scale_polygon_points(points: list, scale: float) -> list:
     if not points or scale == 1.0:
         return points
@@ -55,15 +56,19 @@ def _annotate_polygons(image_bgr: cv2.Mat, polygons: list[object], scale: float 
     for poly in polygons:
         points, class_id = _extract_points_and_class(poly)
         points = _scale_polygon_points(points, scale)
+
         if len(points) < 3:
             continue
         coords = np.asarray(points, dtype=np.float32).reshape(-1, 2)
         if coords.shape[0] < 3:
             continue
         pts = coords.astype(np.int32).reshape((-1, 1, 2))
+
         color = _color_for_class(class_id)
+
         cv2.polylines(annotated, [pts], isClosed=True, color=color, thickness=2)
     return annotated
+
 
 
 def _annotate_rings(image_bgr: cv2.Mat, rings: list[dict], scale: float = 1.0) -> cv2.Mat:
@@ -117,11 +122,13 @@ def main() -> None:
         default=None,
         help="Optional path to write an annotated image with polygon overlays.",
     )
+
     parser.add_argument(
         "--draw-holes",
         action="store_true",
         help="When available, draw merged wall rings (exterior + holes) instead of exteriors only.",
     )
+
     args = parser.parse_args()
 
     image_path = args.image_path
@@ -168,15 +175,18 @@ def main() -> None:
         print(f"Wrote bundle JSON to {output_path}")
 
     if args.annotated_out:
+
         wall_result = bundle.get("wall", {}).get("result", {})
         if args.merge_walls:
             wall_polys = wall_result.get("polygons", []) or []
             wall_rings = wall_result.get("polygons_rings", []) or []
+
         else:
             wall_raw = bundle.get("wall_raw", {})
             wall_polys = (wall_raw.get("wall_a", {}).get("polygons", []) or []) + (
                 wall_raw.get("wall_b", {}).get("polygons", []) or []
             )
+
             wall_rings = []
         room_polys = bundle.get("room", {}).get("result", {}).get("polygons", []) or []
         scale_factor = float(bundle.get("image", {}).get("scale_factor", 1.0) or 1.0)
@@ -185,6 +195,7 @@ def main() -> None:
             annotated = _annotate_polygons(annotated, room_polys, scale=scale_factor)
         else:
             annotated = _annotate_polygons(image_bgr, wall_polys + room_polys, scale=scale_factor)
+
         output_path = Path(args.annotated_out)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(output_path), annotated)
