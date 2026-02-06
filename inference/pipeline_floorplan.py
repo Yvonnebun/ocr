@@ -7,7 +7,7 @@ import numpy as np
 
 from .contracts import BundleResultTD, ModelResultTD
 from .gate import apply_oom_gate
-from .postprocess_hooks import merge_wall_predictions, polygons_to_mask, process_room_polygons
+from .postprocess_hooks import merge_wall_predictions, polygons_to_mask, process_room_polygons, rings_to_mask
 from .yolo_ultralytics import UltralyticsYoloPredictor
 
 
@@ -52,6 +52,7 @@ class FloorplanPipelinePredictor:
         iou: float = 0.7,
         max_det: int = 300,
         classes: Optional[List[int]] = None,
+        merge_walls: bool = True,
     ) -> BundleResultTD:
         t0 = time.perf_counter()
         gated_image, gate_info = apply_oom_gate(
@@ -93,8 +94,19 @@ class FloorplanPipelinePredictor:
 
         wall_a_result = self.wall_a.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         wall_b_result = self.wall_b.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
-        wall_merged = merge_wall_predictions(wall_a_result, wall_b_result, image_shape=(infer_h, infer_w))
-        wall_mask = polygons_to_mask(wall_merged.get("polygons", []) or [], image_shape=(infer_h, infer_w))
+        if merge_walls:
+            wall_result = merge_wall_predictions(wall_a_result, wall_b_result, image_shape=(infer_h, infer_w))
+            wall_merged = True
+        else:
+            wall_result = dict(wall_a_result)
+            wall_result["meta"] = dict(wall_a_result.get("meta", {}))
+            wall_result["meta"]["merged"] = False
+            wall_merged = False
+        wall_rings = wall_result.get("polygons_rings") if isinstance(wall_result, dict) else None
+        if wall_rings:
+            wall_mask = rings_to_mask(wall_rings, image_shape=(infer_h, infer_w))
+        else:
+            wall_mask = polygons_to_mask(wall_result.get("polygons", []) or [], image_shape=(infer_h, infer_w))
         room_input = gated_image.copy()
         if wall_mask.size > 0 and np.any(wall_mask > 0):
             room_input[wall_mask > 0] = (255, 255, 255)
@@ -119,9 +131,10 @@ class FloorplanPipelinePredictor:
             "gate": gate,
             "wall": {
                 "source_models": ["wall_a", "wall_b"],
-                "merged": True,
-                "result": wall_merged,
+                "merged": wall_merged,
+                "result": wall_result,
             },
+            "wall_raw": {"wall_a": wall_a_result, "wall_b": wall_b_result},
             "room": {
                 "source_models": ["room"],
                 "postprocessed": False,
