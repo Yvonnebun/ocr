@@ -3,6 +3,9 @@ FROM pytorch/pytorch:1.10.0-cuda11.3-cudnn8-runtime
 RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
