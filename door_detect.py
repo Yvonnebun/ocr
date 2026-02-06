@@ -39,12 +39,12 @@ def detect_door_count(image_path: str) -> Tuple[int, Dict[str, float]]:
     if not config.DOOR_DETECT_ENABLED:
         return 0, {"enabled": 0.0}
     if not _yolo_available():
-        return 0, {"enabled": 1.0, "error": 1.0, "reason": "ultralytics_missing"}
+        return -1, {"enabled": 1.0, "error": 1.0, "reason": "ultralytics_missing"}
 
     if not config.DOOR_MODEL_PATH:
-        return 0, {"enabled": 1.0, "error": 1.0, "reason": "model_path_missing"}
+        return -1, {"enabled": 1.0, "error": 1.0, "reason": "model_path_missing"}
     if not os.path.exists(config.DOOR_MODEL_PATH):
-        return 0, {"enabled": 1.0, "error": 1.0, "reason": "model_path_not_found"}
+        return -1, {"enabled": 1.0, "error": 1.0, "reason": "model_path_not_found"}
 
     model = _load_model()
     results = model.predict(
@@ -54,7 +54,7 @@ def detect_door_count(image_path: str) -> Tuple[int, Dict[str, float]]:
         verbose=False,
     )
     if not results:
-        return 0, {"enabled": 1.0, "detections": 0.0}
+        return -1, {"enabled": 1.0, "error": 1.0, "reason": "no_results"}
 
     result = results[0]
     names = result.names if hasattr(result, "names") else {}
@@ -62,7 +62,7 @@ def detect_door_count(image_path: str) -> Tuple[int, Dict[str, float]]:
     door_count = 0
 
     if result.boxes is None:
-        return 0, {"enabled": 1.0, "detections": 0.0}
+        return -1, {"enabled": 1.0, "error": 1.0, "reason": "no_boxes"}
 
     for box in result.boxes:
         cls_id = int(box.cls[0].item()) if hasattr(box.cls[0], "item") else int(box.cls[0])
