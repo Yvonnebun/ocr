@@ -6,11 +6,14 @@ import os
 # Paths
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "output")
 IMAGE_DIR = os.path.join(OUTPUT_DIR, "images")
-RENDER_DIR = os.path.join(OUTPUT_DIR, "renders")
+RENDER_DIR = os.getenv("RENDER_DIR", os.path.join(OUTPUT_DIR, "renders"))
 
 # Layout Service Configuration (HTTP client)
 # Layout detection is done via HTTP call to layout-service running in Linux/Docker
-LAYOUT_SERVICE_URL = os.getenv('LAYOUT_SERVICE_URL', 'http://localhost:8001')
+
+# Default uses Docker host gateway for separately run containers.
+LAYOUT_SERVICE_URL = os.getenv('LAYOUT_SERVICE_URL', 'http://host.docker.internal:8001')
+
 
 # Shared Volume Configuration
 # Path contract: All cross-service file paths use shared volume absolute paths
@@ -22,7 +25,9 @@ LAYOUT_READ_TIMEOUT = float(os.getenv('LAYOUT_READ_TIMEOUT', '30'))  # seconds
 LAYOUT_MAX_RETRIES = int(os.getenv('LAYOUT_MAX_RETRIES', '2'))  # number of retries
 
 # codex update: PaddleOCR service configuration (HTTP client)
-PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://localhost:8002')
+
+PADDLE_SERVICE_URL = os.getenv('PADDLE_SERVICE_URL', 'http://host.docker.internal:8002')
+
 PADDLE_CONNECT_TIMEOUT = float(os.getenv('PADDLE_CONNECT_TIMEOUT', '5'))
 PADDLE_READ_TIMEOUT = float(os.getenv('PADDLE_READ_TIMEOUT', '60'))
 PADDLE_MAX_RETRIES = int(os.getenv('PADDLE_MAX_RETRIES', '2'))
@@ -31,7 +36,6 @@ PADDLE_KEEP_CROPS = os.getenv('PADDLE_KEEP_CROPS', 'false').lower() == 'true'
 
 # OCR config
 OCR_LANG = "eng+chi_sim"  # English + Simplified Chinese
-TESSERACT_CMD = "C:/Program Files/Tesseract-OCR/tesseract.exe" # Auto-detect, or set path if needed
 
 # Region Refiner thresholds (configurable hyperparameters)
 # These are used to distinguish text blocks from image regions
@@ -78,7 +82,7 @@ OCR_INVERT_WHITE_RATIO_THRESHOLD = 0.5
 MIN_REGION_SIDE_PX = 0
 
 # codex update: page keyword gate config (floorplan detector)
-PAGE_KEYWORDS = ["floor plan", "floorplan"]
+PAGE_KEYWORDS = ["floor plan", "floorplan","floor plans","development plan","site plan","main floor"]
 PAGE_KEYWORD_LANG = "en"
 GATE_USE_OCR = True
 GATE_MAX_SIDE = 3840
@@ -100,11 +104,36 @@ KW_OCR_MAX_UPSCALE = 4.0
 GATE_PREPROCESS_DIR = os.getenv('GATE_PREPROCESS_DIR', os.path.join(OUTPUT_DIR, 'gate_preprocess'))
 GATE_KEEP_PREPROCESS = os.getenv('GATE_KEEP_PREPROCESS', 'false').lower() == 'true'
 
+# codex update: PDF render settings
+RENDER_DPI = int(os.getenv("RENDER_DPI", "200"))
+
 # codex update: blueprint visual prefilter
 BLUEPRINT_FILTER_ENABLED = True
 BLUEPRINT_MIN_AREA_RATIO = 0.35
 BLUEPRINT_EDGE_DENSITY_MIN = 0.010
 BLUEPRINT_COLOR_MAX = 0.30
+
+# codex update: door detection (YOLO)
+DOOR_DETECT_ENABLED = os.getenv("DOOR_DETECT_ENABLED", "true").lower() == "true"
+DOOR_MODEL_PATH = os.getenv("DOOR_MODEL_PATH", "")
+DOOR_CONF_THRESHOLD = float(os.getenv("DOOR_CONF_THRESHOLD", "0.25"))
+DOOR_IOU_THRESHOLD = float(os.getenv("DOOR_IOU_THRESHOLD", "0.45"))
+DOOR_CLASS_NAMES = [name.strip().lower() for name in os.getenv("DOOR_CLASS_NAMES", "door").split(",") if name.strip()]
+DOOR_MIN_COUNT = int(os.getenv("DOOR_MIN_COUNT", "1"))
+
+# codex update: candidate padding expansion
+CANDIDATE_PAD_RATIO = float(os.getenv("CANDIDATE_PAD_RATIO", "0.2"))
+CANDIDATE_MIN_PAD = int(os.getenv("CANDIDATE_MIN_PAD", "32"))
+CANDIDATE_MAX_PAD = int(os.getenv("CANDIDATE_MAX_PAD", "512"))
+
+# codex update: table keyword extraction
+TABLE_KEYWORDS = [
+    "area schedule",
+    "square",
+    "floor area's (sq.ft.)",
+    "sq.ft.",
+    "square footage"
+]
 
 # codex update: test output root (ensure shared volume visibility)
 TEST_OUTPUT_DIR = os.getenv('TEST_OUTPUT_DIR', os.path.join(OUTPUT_DIR, 'test_outputs'))
@@ -114,4 +143,16 @@ CANDIDATE_MIN_W = 12
 CANDIDATE_MIN_H = 12
 CANDIDATE_OVERLAP_TH = 0.30
 CANDIDATE_MIN_AREA_RATIO = 0.2
-SIDEBAR_PARAMS = dict(side_margin_ratio=0.12, min_height_ratio=0.55, max_width_ratio=0.22)
+SIDEBAR_PARAMS = dict(side_margin_ratio=0.12, min_height_ratio=0.75, max_width_ratio=0.22)
+
+# codex update: floorplan inference & extension
+FLOORPLAN_INFERENCE_ENABLED = os.getenv("FLOORPLAN_INFERENCE_ENABLED", "false").lower() == "true"
+FLOORPLAN_WALL_A_WEIGHTS = os.getenv("FLOORPLAN_WALL_A_WEIGHTS", "")
+FLOORPLAN_WALL_B_WEIGHTS = os.getenv("FLOORPLAN_WALL_B_WEIGHTS", "")
+FLOORPLAN_ROOM_WEIGHTS = os.getenv("FLOORPLAN_ROOM_WEIGHTS", "")
+FLOORPLAN_WINDOW_WEIGHTS = os.getenv("FLOORPLAN_WINDOW_WEIGHTS", "")
+FLOORPLAN_DEVICE = os.getenv("FLOORPLAN_DEVICE", "auto")
+FLOORPLAN_IMGSZ = int(os.getenv("FLOORPLAN_IMGSZ", "1024"))
+FLOORPLAN_HALF = os.getenv("FLOORPLAN_HALF", "true").lower() == "true"
+FLOORPLAN_EXTEND_RATIO = float(os.getenv("FLOORPLAN_EXTEND_RATIO", "0.2"))
+EXTENDED_IMAGE_DIR = os.getenv("EXTENDED_IMAGE_DIR", os.path.join(OUTPUT_DIR, "extended_images"))

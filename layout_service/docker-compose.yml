@@ -4,13 +4,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: layout-service
     ports:
       - "8001:8001"
     volumes:
-      - ../output:/app/shared_data
+      - ${HOST_SHARED_DATA:-../shared_data}:/app/shared_data
       # codex update: expose test outputs to service
-      - ../output/test_outputs:/app/shared_data/test_outputs
+      - ${HOST_SHARED_DATA:-../shared_data}/test_outputs:/app/shared_data/test_outputs
     environment:
       - SHARED_VOLUME_ROOT=/app/shared_data
       - NVIDIA_VISIBLE_DEVICES=all

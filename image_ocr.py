@@ -1,14 +1,9 @@
 """
 Step 6: Image OCR - OCR only on extracted image assets
 """
-import pytesseract
-from PIL import Image
-from typing import List, Dict
-import config
-import config
+from typing import Dict, List
 
-if config.TESSERACT_CMD:
-    pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
+from ocr_service import paddle_ocr
 
 def ocr_image(image_path: str) -> str:
     """
@@ -21,12 +16,28 @@ def ocr_image(image_path: str) -> str:
         OCR text (combined)
     """
     try:
-        img = Image.open(image_path)
-        text = pytesseract.image_to_string(img, lang=config.OCR_LANG)
-        return text.strip()
+        blocks = paddle_ocr(image_path)
     except Exception as e:
         print(f"OCR error for {image_path}: {e}")
         return ""
+
+    if not blocks:
+        return ""
+
+    def sort_key(block: Dict) -> tuple:
+        bbox = block.get("bbox") or []
+        if len(bbox) < 4:
+            return (0.0, 0.0)
+        x0, y0, _, _ = map(float, bbox[:4])
+        return (y0, x0)
+
+    lines = []
+    for block in sorted(blocks, key=sort_key):
+        text = (block.get("text") or "").strip()
+        if text:
+            lines.append(text)
+
+    return "\n".join(lines).strip()
 
 
 def ocr_all_images(extracted_images: List[Dict]) -> List[Dict]:
@@ -49,4 +60,3 @@ def ocr_all_images(extracted_images: List[Dict]) -> List[Dict]:
         results.append(result)
     
     return results
-

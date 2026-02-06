@@ -10,6 +10,17 @@ HTTP service for layout detection using Prima (Detectron2 via LayoutParser).
 
 ## 快速启动
 
+### 模型文件（必需）
+
+离线模型需要放在 `layout_service/models/prima/` 下：
+
+```
+layout_service/models/prima/config.yaml
+layout_service/models/prima/model_final.pth
+```
+
+Docker Compose 示例已经挂载 `./layout_service/models:/app/models`，因此确保上述文件存在即可。
+
 ### 方法 1: Docker Compose（推荐）
 
 ```bash
@@ -145,4 +156,3 @@ python test_layout_service_client.py output/renders/page_0000.png
 - 首次请求较慢（模型加载）
 - 后续请求较快（模型已加载）
 - 建议在启动时 warm-up 模型（已实现）
-
