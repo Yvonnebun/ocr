@@ -38,11 +38,12 @@ class WallRoomPipelinePredictor:
     def predict_bundle(
         self,
         image_bgr: np.ndarray,
+        image_id: Optional[object] = None,
         conf: float = 0.25,
         iou: float = 0.7,
         max_det: int = 300,
         classes: Optional[List[int]] = None,
     ) -> BundleResultTD:
         return self._delegate.predict_bundle(
-            image_bgr, conf=conf, iou=iou, max_det=max_det, classes=classes
+            image_bgr, image_id=image_id, conf=conf, iou=iou, max_det=max_det, classes=classes
         )

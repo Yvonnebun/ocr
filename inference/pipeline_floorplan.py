@@ -7,7 +7,7 @@ import numpy as np
 
 from .contracts import BundleResultTD, ModelResultTD
 from .gate import apply_oom_gate
-from .postprocess_hooks import merge_wall_predictions, process_room_polygons
+from .postprocess_hooks import merge_wall_predictions, polygons_to_mask, process_room_polygons
 from .yolo_ultralytics import UltralyticsYoloPredictor
 
 
@@ -47,6 +47,7 @@ class FloorplanPipelinePredictor:
     def predict_bundle(
         self,
         image_bgr: np.ndarray,
+        image_id: Optional[object] = None,
         conf: float = 0.25,
         iou: float = 0.7,
         max_det: int = 300,
@@ -76,6 +77,7 @@ class FloorplanPipelinePredictor:
             return {
                 "model_bundle": "floorplan_bundle",
                 "image": {
+                    "image_id": image_id,
                     "orig_width": orig_w,
                     "orig_height": orig_h,
                     "infer_width": infer_w,
@@ -92,8 +94,12 @@ class FloorplanPipelinePredictor:
         wall_a_result = self.wall_a.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         wall_b_result = self.wall_b.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
         wall_merged = merge_wall_predictions(wall_a_result, wall_b_result, image_shape=(infer_h, infer_w))
+        wall_mask = polygons_to_mask(wall_merged.get("polygons", []) or [], image_shape=(infer_h, infer_w))
+        room_input = gated_image.copy()
+        if wall_mask.size > 0 and np.any(wall_mask > 0):
+            room_input[wall_mask > 0] = (255, 255, 255)
 
-        room_raw = self.room.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
+        room_raw = self.room.predict(room_input, conf=conf, iou=iou, max_det=max_det, classes=classes)
         room_final = process_room_polygons(room_raw, wall_merged, image_shape=(infer_h, infer_w))
 
         window_result = self.window.predict(gated_image, conf=conf, iou=iou, max_det=max_det, classes=classes)
@@ -103,6 +109,7 @@ class FloorplanPipelinePredictor:
         return {
             "model_bundle": "floorplan_bundle",
             "image": {
+                "image_id": image_id,
                 "orig_width": orig_w,
                 "orig_height": orig_h,
                 "infer_width": infer_w,
@@ -112,7 +119,7 @@ class FloorplanPipelinePredictor:
             "gate": gate,
             "wall": {
                 "source_models": ["wall_a", "wall_b"],
-                "merged": False,
+                "merged": True,
                 "result": wall_merged,
             },
             "room": {

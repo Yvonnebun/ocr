@@ -23,6 +23,7 @@ class ModelResultTD(TypedDict):
 
 
 class BundleImageTD(TypedDict):
+    image_id: object
     orig_width: int
     orig_height: int
     infer_width: int
