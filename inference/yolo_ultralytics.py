@@ -56,6 +56,24 @@ class UltralyticsYoloPredictor:
             )
         return detections
 
+    def _extract_polygons(self, result) -> List[List[float]]:
+        polygons: List[List[float]] = []
+        masks = getattr(result, "masks", None)
+        if masks is None:
+            return polygons
+        mask_polys = getattr(masks, "xy", None)
+        if not mask_polys:
+            return polygons
+        for poly in mask_polys:
+            try:
+                coords = np.asarray(poly, dtype=np.float32).reshape(-1, 2)
+            except Exception:
+                continue
+            if coords.shape[0] < 3:
+                continue
+            polygons.append(coords.flatten().tolist())
+        return polygons
+
     def predict(
         self,
         image_bgr: np.ndarray,
@@ -78,9 +96,11 @@ class UltralyticsYoloPredictor:
             half=runtime_half,
             verbose=False,
         )
+        polygons: List[List[float]] = []
         if results:
             result = results[0]
             detections = self._extract_detections(result)
+            polygons = self._extract_polygons(result)
         else:
             detections = []
         return {
@@ -88,6 +108,6 @@ class UltralyticsYoloPredictor:
             "model_version": str(self.model_version),
             "image": {"width": int(w), "height": int(h)},
             "detections": detections,
-            "polygons": [],
+            "polygons": polygons,
             "meta": {},
         }
