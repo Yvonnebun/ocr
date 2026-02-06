@@ -137,7 +137,7 @@ def process_pdf(pdf_path: str, output_dir: str = None) -> Dict:
                 print(f"  Step 1.5: Page keyword gate...")
                 try:
                     native_text_blocks, has_native_text = extract_native_text(
-                        pdf_path, page_idx, width_px, height_px
+                        pdf_path, page_idx, width_px, height_px, image_path
                     )
                     page_has_kw, force_keep, gate_source = page_has_floorplan_keyword(
                         image_path, native_text_blocks
