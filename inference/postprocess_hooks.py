@@ -1,7 +1,12 @@
 from typing import Any, Dict, List, Tuple
 
-import cv2
 import numpy as np
+
+
+def _cv2_module():
+    import cv2
+
+    return cv2
 
 
 def polygons_to_mask(polys: List[object], image_shape: Tuple[int, int]) -> np.ndarray:
@@ -9,6 +14,7 @@ def polygons_to_mask(polys: List[object], image_shape: Tuple[int, int]) -> np.nd
     mask = np.zeros((height, width), dtype=np.uint8)
     if not polys:
         return mask
+    cv2 = _cv2_module()
     for poly in polys:
         if not poly:
             continue
@@ -29,6 +35,7 @@ def rings_to_mask(rings: List[Dict[str, Any]], image_shape: Tuple[int, int]) -> 
     mask = np.zeros((height, width), dtype=np.uint8)
     if not rings:
         return mask
+    cv2 = _cv2_module()
     for ring in rings:
         exterior = ring.get("exterior") or []
         if len(exterior) < 6:
@@ -51,8 +58,9 @@ def rings_to_mask(rings: List[Dict[str, Any]], image_shape: Tuple[int, int]) -> 
 
 
 def mask_to_polygons(mask: np.ndarray) -> List[List[float]]:
-    if mask is None or mask.size == 0:
+    if mask is None or mask.size == 0 or not np.any(mask):
         return []
+    cv2 = _cv2_module()
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     polygons: List[List[float]] = []
     for contour in contours:
@@ -70,9 +78,10 @@ def mask_to_polygons_rings(mask: np.ndarray) -> List[Dict[str, Any]]:
     [{"exterior":[...], "holes":[[...],[...]]}, ...]
     Points are flattened [x1, y1, x2, y2, ...].
     """
-    if mask is None or mask.size == 0:
+    if mask is None or mask.size == 0 or not np.any(mask):
         return []
     height, width = mask.shape[:2]
+    cv2 = _cv2_module()
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     if hierarchy is None or len(contours) == 0:
         return []

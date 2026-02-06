@@ -3,8 +3,16 @@ from __future__ import annotations
 import math
 from typing import Dict, Optional, Tuple
 
-import cv2
 import numpy as np
+from PIL import Image
+
+
+def _resize_bgr_image(image_bgr: np.ndarray, new_w: int, new_h: int) -> np.ndarray:
+    # Use Pillow so this gate works even when OpenCV native libs are unavailable.
+    image_rgb = image_bgr[:, :, ::-1]
+    pil_image = Image.fromarray(image_rgb)
+    resized_rgb = np.asarray(pil_image.resize((new_w, new_h), resample=Image.Resampling.BOX))
+    return resized_rgb[:, :, ::-1]
 
 
 def apply_oom_gate(
@@ -49,7 +57,7 @@ def apply_oom_gate(
     )
     new_w = max(1, int(round(w * scale)))
     new_h = max(1, int(round(h * scale)))
-    resized = cv2.resize(image_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    resized = _resize_bgr_image(image_bgr, new_w, new_h)
     reason = "max_pixels" if exceeds_pixels else "max_side"
     return resized, {
         "status": "downscaled",

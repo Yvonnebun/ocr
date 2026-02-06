@@ -35,4 +35,4 @@ docker run --rm -it \
 ```
 
 Update the paths in `examples/run_floorplan_pipeline.py` to point to the mounted
-image and weight files before running.【F:examples/run_floorplan_pipeline.py†L1-L41】
+image and weight files before running.
