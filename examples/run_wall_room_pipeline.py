@@ -9,9 +9,44 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import cv2
+import numpy as np
 
 import config
 from inference.pipeline_floorplan import FloorplanPipelinePredictor
+
+
+def _color_for_class(class_id: int | None) -> tuple[int, int, int]:
+    palette = [
+        (255, 0, 0),
+        (0, 255, 0),
+        (0, 0, 255),
+        (255, 255, 0),
+        (255, 0, 255),
+        (0, 255, 255),
+        (128, 0, 255),
+        (255, 128, 0),
+        (0, 128, 255),
+    ]
+    if class_id is None or class_id < 0:
+        return (200, 200, 200)
+    return palette[class_id % len(palette)]
+
+
+def _annotate_polygons(image_bgr: cv2.Mat, polygons: list[dict]) -> cv2.Mat:
+    annotated = image_bgr.copy()
+    for poly in polygons:
+        if not isinstance(poly, dict):
+            continue
+        points = poly.get("points") or []
+        if len(points) < 3:
+            continue
+        coords = np.asarray(points, dtype=np.float32).reshape(-1, 2)
+        if coords.shape[0] < 3:
+            continue
+        pts = coords.astype(np.int32).reshape((-1, 1, 2))
+        color = _color_for_class(poly.get("class_id"))
+        cv2.polylines(annotated, [pts], isClosed=True, color=color, thickness=2)
+    return annotated
 
 
 def main() -> None:
@@ -37,6 +72,11 @@ def main() -> None:
         "--polys-out",
         default=None,
         help="Optional path to write the raw bundle JSON (including polygons).",
+    )
+    parser.add_argument(
+        "--annotated-out",
+        default=None,
+        help="Optional path to write an annotated image with polygon overlays.",
     )
     args = parser.parse_args()
 
@@ -82,6 +122,15 @@ def main() -> None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Wrote bundle JSON to {output_path}")
+
+    if args.annotated_out:
+        wall_polys = bundle.get("wall", {}).get("result", {}).get("polygons", []) or []
+        room_polys = bundle.get("room", {}).get("result", {}).get("polygons", []) or []
+        annotated = _annotate_polygons(image_bgr, wall_polys + room_polys)
+        output_path = Path(args.annotated_out)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(output_path), annotated)
+        print(f"Wrote annotated image to {output_path}")
 
 
 if __name__ == "__main__":
