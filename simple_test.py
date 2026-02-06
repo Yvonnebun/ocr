@@ -176,7 +176,7 @@ if page_info:
         
         test_image_path, width_px, height_px = page_info[0]
         native_text_blocks, has_native_text = extract_native_text(
-            pdf_path, 0, width_px, height_px
+            pdf_path, 0, width_px, height_px, test_image_path
         )
         print(f"  ✓ 提取了 {len(native_text_blocks)} 个文本块")
         print(f"  Has native text: {has_native_text}")

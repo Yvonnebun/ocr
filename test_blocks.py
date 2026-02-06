@@ -65,7 +65,7 @@ def main() -> int:
 
         # Block 2: Native text + keyword gate
         print("[Block 2] Keyword gate")
-        native_text_blocks, _ = extract_native_text(pdf_path, page_idx, width_px, height_px)
+        native_text_blocks, _ = extract_native_text(pdf_path, page_idx, width_px, height_px, image_path)
         gate_passed, force_keep, gate_source = page_has_floorplan_keyword(image_path, native_text_blocks)
         print(f"Gate passed: {gate_passed} (force_keep={force_keep}, source={gate_source})")
         run_logger.log_event(
